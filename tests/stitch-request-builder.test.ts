@@ -78,6 +78,10 @@ beforeAll(async () => {
 });
 
 describe("Stitch request builder", () => {
+  function expectedPrompt(website: string): string {
+    return `${MONARCH_STITCH_PROMPT} ${website}`;
+  }
+
   it("prepares website, prompt, and a readable transparent logo", async () => {
     const item = prospect("with-logo");
     const { readLogo, store } = createStore([item]);
@@ -89,7 +93,7 @@ describe("Stitch request builder", () => {
       business_name: "with-logo Company",
       has_logo: true,
       logo_storage_path: "prospects/with-logo/logo/transparent.png",
-      stitch_prompt: MONARCH_STITCH_PROMPT,
+      stitch_prompt: expectedPrompt("https://with-logo.example"),
       website: "https://with-logo.example",
     });
     expect(readLogo).toHaveBeenCalledWith(
@@ -188,7 +192,7 @@ describe("Stitch request builder", () => {
       id: item.id,
       changes: {
         error_message: null,
-        stitch_prompt: MONARCH_STITCH_PROMPT,
+        stitch_prompt: expectedPrompt(item.website),
         stitch_status: "PENDING",
         workflow_status: "STITCH_PENDING",
       },
@@ -210,7 +214,9 @@ describe("Stitch request builder", () => {
     const second = await prepareStitchRequests({ store });
 
     expect(first.results[0]?.request).toEqual(second.results[0]?.request);
-    expect(first.results[0]?.request?.stitch_prompt).toBe(MONARCH_STITCH_PROMPT);
+    expect(first.results[0]?.request?.stitch_prompt).toBe(
+      expectedPrompt(item.website),
+    );
     expect(updates).toHaveLength(2);
     expect(readLogo).not.toHaveBeenCalled();
   });

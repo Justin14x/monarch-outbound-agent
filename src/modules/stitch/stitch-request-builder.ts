@@ -163,10 +163,11 @@ export function buildStitchRequest(
   }
 
   const masterPrompt = options.masterPrompt ?? MONARCH_STITCH_PROMPT;
-  const stitchPrompt = masterPrompt.trim();
-  if (!stitchPrompt) {
+  const promptTemplate = masterPrompt.trim();
+  if (!promptTemplate) {
     throw new StitchRequestError("master Stitch prompt is required");
   }
+  const stitchPrompt = `${promptTemplate} ${website}`;
 
   const logoStoragePath = logoPathFor(
     prospect,
