@@ -20,7 +20,7 @@ CSV import
   -> send
 ```
 
-The Supabase foundation, CSV prospect importer, official-logo finder, and transparent-background processing integration are implemented. Stitch, email discovery, email generation, and Gmail are intentionally not implemented.
+The Supabase foundation, CSV prospect importer, official-logo finder, transparent-background processing integration, and Stitch request preparation are implemented. Calling Google Stitch, email discovery, email generation, and Gmail are intentionally not implemented.
 
 ## Architecture
 
@@ -35,9 +35,12 @@ The Supabase foundation, CSV prospect importer, official-logo finder, and transp
 - `src/modules/logos/logo-processor.ts` owns batch state transitions and Supabase Storage upload/read-back verification.
 - `src/modules/logos/transparent-logo-generator.ts` owns the official OpenAI image edit call and transparent-PNG validation.
 - `src/modules/logos/transparent-logo-processor.ts` owns Step 5 eligibility, state transitions, idempotency, and Storage verification.
+- `src/config/stitch-prompt.ts` is the single editable source for the master Monarch Stitch prompt.
+- `src/modules/stitch/stitch-request-builder.ts` validates and prepares deterministic website/prompt/logo request payloads without calling Stitch.
 - `src/lib/openai/server.ts` owns the reusable server-only OpenAI client.
 - `src/scripts/import-prospects.ts` is the command-line entry point for imports.
 - `src/scripts/find-logos.ts` is the command-line entry point for logo discovery.
+- `src/scripts/prepare-stitch-requests.ts` is the command-line entry point for Step 6 request preparation.
 - `src/scripts/verify-supabase.ts` performs a read-only connection check.
 
 ## Prospect assets
@@ -88,6 +91,7 @@ npm run prospects:import -- samples/prospects.csv
 npm run logos:find -- 10
 npm run logos:make-transparent -- 10
 npm run logos:inspect -- 3600
+npm run stitch:prepare -- 10
 ```
 
 `db:verify` builds the application, makes a read-only count query against `public.prospects`, and verifies the `prospect-assets` bucket using the server client.
@@ -205,6 +209,42 @@ After processing, compare originals and transparent versions with temporary priv
 ```bash
 npm run logos:inspect -- 86400
 ```
+
+## Stitch request preparation
+
+Step 6 prepares and validates the exact internal payload that Step 7 will eventually send to Google Stitch. It does not call Stitch, inspect prospect websites, or generate app screens.
+
+The shared prompt is defined only in `src/config/stitch-prompt.ts`. Every prepared prospect receives that exact text in `stitch_prompt` and transitions to `workflow_status = 'STITCH_PENDING'` with `stitch_status = 'PENDING'`.
+
+Run a batch of up to 10 eligible prospects:
+
+```bash
+npm run stitch:prepare -- 10
+```
+
+The normal eligible paths are:
+
+- `LOGO_READY` with a canonical `transparent_logo_url`: the private PNG is downloaded and validated before preparation.
+- `LOGO_NOT_FOUND` with no transparent logo: a valid no-logo request is prepared from the website and master prompt.
+- `STITCH_PENDING`: rerunning deterministically refreshes the stored prompt and revalidates any referenced logo.
+
+A technical logo-processing failure is not silently treated as “no logo.” When intentionally proceeding without those failed logos, use the explicit override:
+
+```bash
+npm run stitch:prepare -- 10 --include-logo-failures
+```
+
+The request representation contains only:
+
+```text
+business_name
+website
+stitch_prompt
+logo_storage_path
+has_logo
+```
+
+`logo_storage_path` is the canonical object path in the private `prospect-assets` bucket, never a temporary signed URL. The command creates no records or assets and is safe to rerun.
 
 ## Migration workflow
 

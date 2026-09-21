@@ -11,6 +11,7 @@
     "logos:inspect": "npm run build && node --env-file=.env.local dist/scripts/inspect-logos.js",
     "logos:make-transparent": "npm run build && node --env-file=.env.local dist/scripts/process-transparent-logos.js",
     "prospects:import": "npm run build && node --env-file=.env.local dist/scripts/import-prospects.js",
+    "stitch:prepare": "npm run build && node --env-file=.env.local dist/scripts/prepare-stitch-requests.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
