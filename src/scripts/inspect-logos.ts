@@ -16,28 +16,37 @@ if (
     const { data: prospects, error } = await client
       .from("prospects")
       .select(
-        "business_name, website, logo_status, logo_source_url, original_logo_url",
+        "business_name, logo_status, workflow_status, original_logo_url, transparent_logo_url",
       )
       .order("business_name");
 
     if (error) throw error;
 
     console.log(
-      `Logo inspection links (expire in ${expiresIn} seconds)\n\n| Business | Logo Status | Source URL | Supabase Location | Inspect Saved Logo |\n|---|---|---|---|---|`,
+      `Logo inspection links (expire in ${expiresIn} seconds)\n\n| Business | Original Logo | Transparent Logo | Logo Status | Workflow Status |\n|---|---|---|---|---|`,
     );
 
     for (const prospect of prospects ?? []) {
-      let inspectionUrl = "—";
+      let originalUrl = "—";
       if (prospect.original_logo_url) {
         const { data, error: signedUrlError } = await client.storage
           .from("prospect-assets")
           .createSignedUrl(prospect.original_logo_url, expiresIn);
         if (signedUrlError) throw signedUrlError;
-        inspectionUrl = `[Open saved logo](${data.signedUrl})`;
+        originalUrl = `[Open original](${data.signedUrl})`;
+      }
+
+      let transparentUrl = "—";
+      if (prospect.transparent_logo_url) {
+        const { data, error: signedUrlError } = await client.storage
+          .from("prospect-assets")
+          .createSignedUrl(prospect.transparent_logo_url, expiresIn);
+        if (signedUrlError) throw signedUrlError;
+        transparentUrl = `[Open transparent](${data.signedUrl})`;
       }
 
       console.log(
-        `| ${prospect.business_name} | ${prospect.logo_status ?? "—"} | ${prospect.logo_source_url ?? "—"} | ${prospect.original_logo_url ?? "—"} | ${inspectionUrl} |`,
+        `| ${prospect.business_name} | ${originalUrl} | ${transparentUrl} | ${prospect.logo_status ?? "—"} | ${prospect.workflow_status} |`,
       );
     }
   } catch (error) {

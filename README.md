@@ -20,7 +20,7 @@ CSV import
   -> send
 ```
 
-The Supabase foundation, CSV prospect importer, and official-logo finder are implemented. Transparent-background processing, Stitch, email discovery, email generation, and Gmail are intentionally not implemented.
+The Supabase foundation, CSV prospect importer, official-logo finder, and transparent-background processing integration are implemented. Stitch, email discovery, email generation, and Gmail are intentionally not implemented.
 
 ## Architecture
 
@@ -33,6 +33,9 @@ The Supabase foundation, CSV prospect importer, and official-logo finder are imp
 - `src/modules/logos/logo-finder.ts` extracts, ranks, downloads, and validates official-logo candidates.
 - `src/modules/logos/safe-http.ts` applies timeouts, response-size limits, redirect checks, and private-network blocking to website requests.
 - `src/modules/logos/logo-processor.ts` owns batch state transitions and Supabase Storage upload/read-back verification.
+- `src/modules/logos/transparent-logo-generator.ts` owns the official OpenAI image edit call and transparent-PNG validation.
+- `src/modules/logos/transparent-logo-processor.ts` owns Step 5 eligibility, state transitions, idempotency, and Storage verification.
+- `src/lib/openai/server.ts` owns the reusable server-only OpenAI client.
 - `src/scripts/import-prospects.ts` is the command-line entry point for imports.
 - `src/scripts/find-logos.ts` is the command-line entry point for logo discovery.
 - `src/scripts/verify-supabase.ts` performs a read-only connection check.
@@ -55,6 +58,7 @@ The `public.prospects` table has RLS enabled, but grants no access to `anon` or 
 
 - Node.js 22 or newer
 - A Supabase secret key for project `wleggbyvbuvwxttusrtc`
+- An OpenAI API key with access to `gpt-image-2.5-sunburst`
 
 Install dependencies and create local configuration:
 
@@ -68,6 +72,7 @@ Set these variables in `.env.local`:
 ```dotenv
 SUPABASE_URL=https://wleggbyvbuvwxttusrtc.supabase.co
 SUPABASE_SECRET_KEY=sb_secret_your_server_only_key
+OPENAI_API_KEY=sk_your_server_only_key
 ```
 
 `.env.local` and all `.env.*` variants except `.env.example` are ignored by Git.
@@ -81,6 +86,7 @@ npm run build
 npm run db:verify
 npm run prospects:import -- samples/prospects.csv
 npm run logos:find -- 10
+npm run logos:make-transparent -- 10
 npm run logos:inspect -- 3600
 ```
 
@@ -171,6 +177,34 @@ npm run logos:inspect -- 3600
 ```
 
 The numeric argument is the signed-link lifetime in seconds and may be between 60 seconds and seven days. This command is read-only and uses the existing server client; it does not make the bucket public.
+
+## Transparent logo processing
+
+Step 5 processes only records with `workflow_status = 'LOGO_FOUND'`, `logo_status = 'FOUND'`, and a non-null `original_logo_url`:
+
+```bash
+npm run logos:make-transparent -- 10
+```
+
+For every eligible record, the processor downloads the original bytes from the private `prospect-assets` bucket and supplies that file to the official OpenAI Image API `images.edit` method using `gpt-image-2.5-sunburst`. The exact prompt is:
+
+```text
+Generate this logo with a transparent background
+```
+
+The API request separately sets `background = 'transparent'` and `output_format = 'png'`. The returned image must pass PNG-signature, decoding, dimensions, alpha-channel, transparent-pixel, and nonblank-content validation. It is uploaded to:
+
+```text
+prospects/{prospect_id}/logo/transparent.png
+```
+
+The uploaded object is downloaded, byte-compared, and revalidated before the record becomes `LOGO_READY` / `READY`. Original objects and source URLs are never overwritten. Prospects already marked `LOGO_READY` / `READY` are excluded, and a valid deterministic Storage output left by an interrupted run is reused without another paid OpenAI request.
+
+After processing, compare originals and transparent versions with temporary private links:
+
+```bash
+npm run logos:inspect -- 86400
+```
 
 ## Migration workflow
 

@@ -9,6 +9,7 @@
     "db:verify": "npm run build && node --env-file=.env.local dist/scripts/verify-supabase.js",
     "logos:find": "npm run build && node --env-file=.env.local dist/scripts/find-logos.js",
     "logos:inspect": "npm run build && node --env-file=.env.local dist/scripts/inspect-logos.js",
+    "logos:make-transparent": "npm run build && node --env-file=.env.local dist/scripts/process-transparent-logos.js",
     "prospects:import": "npm run build && node --env-file=.env.local dist/scripts/import-prospects.js",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -22,6 +23,7 @@
     "@supabase/supabase-js": "2.116.0",
     "cheerio": "1.2.0",
     "csv-parse": "7.0.2",
+    "openai": "7.20.0",
     "sharp": "0.35.4"
   },
   "devDependencies": {
