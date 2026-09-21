@@ -20,7 +20,7 @@ CSV import
   -> send
 ```
 
-Only the Supabase schema, private asset bucket, generated types, connection configuration, and prospect CRUD repository exist. CSV ingestion, logo discovery/processing, Stitch, email discovery, and Gmail are intentionally not implemented.
+The Supabase foundation and CSV prospect importer are implemented. Logo discovery/processing, Stitch, email discovery, email generation, and Gmail are intentionally not implemented.
 
 ## Architecture
 
@@ -28,6 +28,9 @@ Only the Supabase schema, private asset bucket, generated types, connection conf
 - `src/types/database.generated.ts` is generated from the live Supabase schema.
 - `src/lib/supabase/server.ts` owns the application's single reusable server-side client.
 - `src/modules/prospects/` owns prospect types and CRUD operations.
+- `src/modules/prospects/prospect.csv-import.ts` owns CSV validation, deduplication, and row-level import results.
+- `src/modules/prospects/website-normalization.ts` owns website parsing and normalized-domain generation.
+- `src/scripts/import-prospects.ts` is the command-line entry point for imports.
 - `src/scripts/verify-supabase.ts` performs a read-only connection check.
 
 ## Prospect assets
@@ -72,9 +75,42 @@ npm test
 npm run typecheck
 npm run build
 npm run db:verify
+npm run prospects:import -- samples/prospects.csv
 ```
 
 `db:verify` builds the application, makes a read-only count query against `public.prospects`, and verifies the `prospect-assets` bucket using the server client.
+
+## CSV prospect import
+
+The importer requires a header row with these two named columns (additional columns are ignored):
+
+```csv
+business_name,website
+Nara Pilates,https://narapilates.com
+Skin Hub Med Spa,https://skinhubmedspa.com
+FREEHAND,https://www.freehanddallas.com
+```
+
+Run the included sample after setting `SUPABASE_URL` and `SUPABASE_SECRET_KEY` in `.env.local`:
+
+```bash
+npm run prospects:import -- samples/prospects.csv
+```
+
+Each valid new row is inserted with `workflow_status = 'IMPORTED'` and `logo_status = 'PENDING'`. The importer normalizes the hostname to lowercase, removes one leading `www.`, and ignores protocol, path, port, query, fragment, and trailing-slash differences when checking the domain. The parsed, usable URL remains in `website`.
+
+The importer checks `normalized_domain` before inserting, and the existing unique database constraint remains the final concurrency safeguard. Re-importing the same file therefore reports duplicates instead of creating additional prospects. Invalid rows and database failures are reported individually without preventing valid later rows from being processed.
+
+Example output:
+
+```text
+CSV IMPORT COMPLETE
+
+Total rows: 3
+Imported: 3
+Duplicates: 0
+Failed: 0
+```
 
 ## Migration workflow
 

@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "db:verify": "npm run build && node --env-file=.env.local dist/scripts/verify-supabase.js",
+    "prospects:import": "npm run build && node --env-file=.env.local dist/scripts/import-prospects.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -16,7 +17,8 @@
     "node": ">=22"
   },
   "dependencies": {
-    "@supabase/supabase-js": "2.116.0"
+    "@supabase/supabase-js": "2.116.0",
+    "csv-parse": "7.0.2"
   },
   "devDependencies": {
     "@types/node": "26.6.2",

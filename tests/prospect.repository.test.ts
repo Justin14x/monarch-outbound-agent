@@ -5,6 +5,7 @@ import {
   createProspect,
   deleteProspect,
   getProspect,
+  getProspectByNormalizedDomain,
   updateProspect,
 } from "../src/modules/prospects/prospect.repository.js";
 import type { Database } from "../src/types/database.generated.js";
@@ -74,6 +75,18 @@ describe("prospect CRUD", () => {
 
     await expect(getProspect(prospect.id, client)).resolves.toEqual(prospect);
     expect(eq).toHaveBeenCalledWith("id", prospect.id);
+  });
+
+  it("reads a prospect by normalized domain", async () => {
+    const maybeSingle = vi.fn().mockResolvedValue({ data: prospect, error: null });
+    const eq = vi.fn().mockReturnValue({ maybeSingle });
+    const select = vi.fn().mockReturnValue({ eq });
+    const client = asClient({ from: vi.fn().mockReturnValue({ select }) });
+
+    await expect(
+      getProspectByNormalizedDomain("example.com", client),
+    ).resolves.toEqual(prospect);
+    expect(eq).toHaveBeenCalledWith("normalized_domain", "example.com");
   });
 
   it("updates a prospect and returns the changed record", async () => {

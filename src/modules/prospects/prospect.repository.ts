@@ -54,6 +54,20 @@ export async function getProspect(
   return data;
 }
 
+export async function getProspectByNormalizedDomain(
+  normalizedDomain: string,
+  client: MonarchServerSupabaseClient = getServerSupabaseClient(),
+): Promise<Prospect | null> {
+  const { data, error } = await client
+    .from("prospects")
+    .select("*")
+    .eq("normalized_domain", normalizedDomain)
+    .maybeSingle();
+
+  if (error) throw new ProspectDataError("read", error);
+  return data;
+}
+
 export async function listProspects(
   options: ListProspectsOptions = {},
   client: MonarchServerSupabaseClient = getServerSupabaseClient(),
