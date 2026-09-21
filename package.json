@@ -1,0 +1,28 @@
+{
+  "name": "monarch-outbound-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The prospect memory and workflow foundation for Monarch Systems outbound.",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "db:verify": "npm run build && node --env-file=.env.local dist/scripts/verify-supabase.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "db:types": "supabase gen types typescript --project-id wleggbyvbuvwxttusrtc --schema public > src/types/database.generated.ts"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.116.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.2",
+    "@vitest/coverage-v8": "5.0.1",
+    "supabase": "2.117.0",
+    "typescript": "7.0.2",
+    "vitest": "5.0.1"
+  }
+}
