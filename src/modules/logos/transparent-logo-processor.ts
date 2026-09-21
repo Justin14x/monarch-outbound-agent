@@ -119,15 +119,17 @@ export function createSupabaseTransparentLogoStore(
     },
     async readExistingTransparent(prospectId) {
       const path = transparentPath(prospectId);
-      const { data: exists, error } = await client.storage
+      const folder = `prospects/${prospectId}/logo`;
+      const { data: objects, error } = await client.storage
         .from(ASSET_BUCKET)
-        .exists(path);
+        .list(folder, { limit: 100, search: "transparent.png" });
       if (error) {
         throw new TransparentLogoStorageError(
           `Could not check ${path}: ${error.message}`,
           { cause: error },
         );
       }
+      const exists = objects.some(({ name }) => name === "transparent.png");
       return exists ? download(path) : null;
     },
     readStored: download,
