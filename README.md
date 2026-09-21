@@ -81,6 +81,7 @@ npm run build
 npm run db:verify
 npm run prospects:import -- samples/prospects.csv
 npm run logos:find -- 10
+npm run logos:inspect -- 3600
 ```
 
 `db:verify` builds the application, makes a read-only count query against `public.prospects`, and verifies the `prospect-assets` bucket using the server client.
@@ -162,6 +163,14 @@ select
 from public.prospects
 order by updated_at desc;
 ```
+
+Because `prospect-assets` is private, generate temporary browser links for manual visual review with:
+
+```bash
+npm run logos:inspect -- 3600
+```
+
+The numeric argument is the signed-link lifetime in seconds and may be between 60 seconds and seven days. This command is read-only and uses the existing server client; it does not make the bucket public.
 
 ## Migration workflow
 

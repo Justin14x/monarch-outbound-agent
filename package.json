@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.build.json",
     "db:verify": "npm run build && node --env-file=.env.local dist/scripts/verify-supabase.js",
     "logos:find": "npm run build && node --env-file=.env.local dist/scripts/find-logos.js",
+    "logos:inspect": "npm run build && node --env-file=.env.local dist/scripts/inspect-logos.js",
     "prospects:import": "npm run build && node --env-file=.env.local dist/scripts/import-prospects.js",
     "test": "vitest run",
     "test:watch": "vitest",

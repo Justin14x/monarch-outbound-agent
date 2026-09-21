@@ -242,6 +242,21 @@ describe("official logo finder fixtures", () => {
     expect(result).toMatchObject({ confidence: "MEDIUM", sourceUrl: iconUrl });
   });
 
+  it("rejects a website-builder default favicon instead of reporting a false logo", async () => {
+    const website = "https://text-logo.example/";
+    const finder = createLogoFinder(
+      fakeHttp(
+        '<html><head><link rel="icon" sizes="180x180" href="https://cdn.example/static/pwa-app/logo-default.png"></head><body><header><h3 data-aid="HEADER_LOGO_TEXT_RENDERED">Text Logo Company</h3></header></body></html>',
+        website,
+        {},
+      ),
+    );
+
+    await expect(
+      finder.find({ businessName: "Text Logo Company", website }),
+    ).rejects.toBeInstanceOf(LogoNotFoundError);
+  });
+
   it("treats an unsupported strong logo asset as a technical failure", async () => {
     const website = "https://unsupported.example/";
     const logoUrl = "https://unsupported.example/official-logo.eps";

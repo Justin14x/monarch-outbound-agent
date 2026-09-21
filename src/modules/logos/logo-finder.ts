@@ -29,9 +29,12 @@ const THIRD_PARTY_TERMS = [
 
 const PLACEHOLDER_TERMS = [
   "blank",
+  "default-logo",
   "loader",
   "loading",
+  "logo-default",
   "placeholder",
+  "pwa-app",
   "spacer",
   "spinner",
   "tracking",
