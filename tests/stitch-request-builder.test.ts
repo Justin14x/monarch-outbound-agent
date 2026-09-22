@@ -1,7 +1,10 @@
 import sharp from "sharp";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
-import { MONARCH_STITCH_PROMPT } from "../src/config/stitch-prompt.js";
+import {
+  MONARCH_STITCH_LOGO_INSTRUCTION,
+  MONARCH_STITCH_PROMPT,
+} from "../src/config/stitch-prompt.js";
 import {
   prepareStitchRequests,
   type StitchRequestStore,
@@ -78,8 +81,14 @@ beforeAll(async () => {
 });
 
 describe("Stitch request builder", () => {
-  function expectedPrompt(website: string): string {
-    return `${MONARCH_STITCH_PROMPT} ${website}`;
+  function expectedPrompt(website: string, hasLogo = false): string {
+    return [
+      MONARCH_STITCH_PROMPT,
+      hasLogo ? MONARCH_STITCH_LOGO_INSTRUCTION : null,
+      `This is the website: ${website}`,
+    ]
+      .filter((part): part is string => part !== null)
+      .join(" ");
   }
 
   it("prepares website, prompt, and a readable transparent logo", async () => {
@@ -93,7 +102,7 @@ describe("Stitch request builder", () => {
       business_name: "with-logo Company",
       has_logo: true,
       logo_storage_path: "prospects/with-logo/logo/transparent.png",
-      stitch_prompt: expectedPrompt("https://with-logo.example"),
+      stitch_prompt: expectedPrompt("https://with-logo.example", true),
       website: "https://with-logo.example",
     });
     expect(readLogo).toHaveBeenCalledWith(
@@ -116,7 +125,11 @@ describe("Stitch request builder", () => {
     expect(result.results[0]?.request).toMatchObject({
       has_logo: false,
       logo_storage_path: null,
+      stitch_prompt: expectedPrompt("https://without-logo.example"),
     });
+    expect(result.results[0]?.request?.stitch_prompt).not.toContain(
+      MONARCH_STITCH_LOGO_INSTRUCTION,
+    );
     expect(readLogo).not.toHaveBeenCalled();
   });
 
@@ -166,19 +179,38 @@ describe("Stitch request builder", () => {
     expect(result.results[0]?.error).toBe("master Stitch prompt is required");
   });
 
-  it("fails when the database logo reference is missing from Storage", async () => {
+  it("falls back to a website-only request when the logo is missing from Storage", async () => {
     const { store, updates } = createStore([prospect("missing-object")], {
       logoError: new Error("Object not found"),
     });
 
     const result = await prepareStitchRequests({ store });
 
-    expect(result).toMatchObject({ prepared: 0, failed: 1 });
-    expect(result.results[0]?.error).toBe("Object not found");
-    expect(updates.at(-1)?.changes).toEqual({
-      error_message: "Object not found",
-      stitch_status: "FAILED",
-      workflow_status: "FAILED",
+    expect(result).toMatchObject({ prepared: 1, failed: 0 });
+    expect(result.results[0]?.request).toMatchObject({
+      has_logo: false,
+      logo_storage_path: null,
+      stitch_prompt: expectedPrompt("https://missing-object.example"),
+    });
+    expect(updates.at(-1)?.changes).toMatchObject({
+      error_message: null,
+      stitch_status: "PENDING",
+      workflow_status: "STITCH_PENDING",
+    });
+  });
+
+  it("falls back to a website-only request when the logo is not a usable transparent PNG", async () => {
+    const { store } = createStore([prospect("invalid-logo")], {
+      logo: new TextEncoder().encode("not a PNG"),
+    });
+
+    const result = await prepareStitchRequests({ store });
+
+    expect(result).toMatchObject({ prepared: 1, failed: 0 });
+    expect(result.results[0]?.request).toMatchObject({
+      has_logo: false,
+      logo_storage_path: null,
+      stitch_prompt: expectedPrompt("https://invalid-logo.example"),
     });
   });
 
@@ -192,7 +224,7 @@ describe("Stitch request builder", () => {
       id: item.id,
       changes: {
         error_message: null,
-        stitch_prompt: expectedPrompt(item.website),
+        stitch_prompt: expectedPrompt(item.website, true),
         stitch_status: "PENDING",
         workflow_status: "STITCH_PENDING",
       },

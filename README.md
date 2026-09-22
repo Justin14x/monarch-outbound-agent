@@ -214,7 +214,7 @@ npm run logos:inspect -- 86400
 
 Step 6 prepares and validates the exact internal payload that Step 7 will eventually send to Google Stitch. It does not call Stitch, inspect prospect websites, or generate app screens.
 
-The shared prompt is defined only in `src/config/stitch-prompt.ts`. Every prepared prospect receives that exact text in `stitch_prompt` and transitions to `workflow_status = 'STITCH_PENDING'` with `stitch_status = 'PENDING'`.
+The website-only master prompt and conditional logo instruction are defined in `src/config/stitch-prompt.ts`. A prepared prompt mentions an attached logo only after the canonical private Storage object has been downloaded and validated as a usable transparent PNG. If no usable logo is available, preparation continues with the website-only prompt. Every prepared prospect transitions to `workflow_status = 'STITCH_PENDING'` with `stitch_status = 'PENDING'`.
 
 Run a batch of up to 10 eligible prospects:
 
@@ -224,11 +224,11 @@ npm run stitch:prepare -- 10
 
 The normal eligible paths are:
 
-- `LOGO_READY` with a canonical `transparent_logo_url`: the private PNG is downloaded and validated before preparation.
+- `LOGO_READY` with a canonical `transparent_logo_url`: the private PNG is downloaded and validated before its instruction and Storage reference are included. An unavailable or unusable logo falls back to a website-only request.
 - `LOGO_NOT_FOUND` with no transparent logo: a valid no-logo request is prepared from the website and master prompt.
 - `STITCH_PENDING`: rerunning deterministically refreshes the stored prompt and revalidates any referenced logo.
 
-A technical logo-processing failure is not silently treated as “no logo.” When intentionally proceeding without those failed logos, use the explicit override:
+A prospect already marked as a technical logo-processing failure requires an explicit override to become eligible for website-only preparation:
 
 ```bash
 npm run stitch:prepare -- 10 --include-logo-failures

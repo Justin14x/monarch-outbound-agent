@@ -1,4 +1,7 @@
-import { MONARCH_STITCH_PROMPT } from "../../config/stitch-prompt.js";
+import {
+  MONARCH_STITCH_LOGO_INSTRUCTION,
+  MONARCH_STITCH_PROMPT,
+} from "../../config/stitch-prompt.js";
 import {
   getServerSupabaseClient,
   type MonarchServerSupabaseClient,
@@ -105,30 +108,13 @@ function logoPathFor(
     prospect.workflow_status === "LOGO_READY" ||
     prospect.workflow_status === "STITCH_PENDING"
   ) {
-    if (storedPath === null) {
-      if (isIntentionalNoLogoPath(prospect, includeLogoFailuresAsNoLogo)) {
-        return null;
-      }
-      throw new StitchRequestError(
-        "transparent_logo_url is required for a logo-ready prospect",
-      );
-    }
+    if (storedPath === null) return null;
 
     const expectedPath = expectedTransparentLogoPath(prospect.id);
-    if (storedPath !== expectedPath) {
-      throw new StitchRequestError(
-        `transparent_logo_url must be the canonical Storage path ${expectedPath}`,
-      );
-    }
-    return storedPath;
+    return storedPath === expectedPath ? storedPath : null;
   }
 
   if (isIntentionalNoLogoPath(prospect, includeLogoFailuresAsNoLogo)) {
-    if (storedPath !== null) {
-      throw new StitchRequestError(
-        "A no-logo Stitch request cannot reference a transparent logo",
-      );
-    }
     return null;
   }
 
@@ -141,6 +127,7 @@ export function buildStitchRequest(
   prospect: Prospect,
   options: {
     includeLogoFailuresAsNoLogo?: boolean;
+    logoStoragePath?: string | null;
     masterPrompt?: string;
   } = {},
 ): StitchRequest {
@@ -167,12 +154,20 @@ export function buildStitchRequest(
   if (!promptTemplate) {
     throw new StitchRequestError("master Stitch prompt is required");
   }
-  const stitchPrompt = `${promptTemplate} ${website}`;
-
-  const logoStoragePath = logoPathFor(
-    prospect,
-    options.includeLogoFailuresAsNoLogo ?? false,
-  );
+  const logoStoragePath =
+    "logoStoragePath" in options
+      ? (options.logoStoragePath ?? null)
+      : logoPathFor(
+          prospect,
+          options.includeLogoFailuresAsNoLogo ?? false,
+        );
+  const stitchPrompt = [
+    promptTemplate,
+    logoStoragePath === null ? null : MONARCH_STITCH_LOGO_INSTRUCTION,
+    `This is the website: ${website}`,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(" ");
 
   return {
     business_name: businessName,
@@ -244,15 +239,25 @@ async function prepareProspect(
   includeLogoFailuresAsNoLogo: boolean,
 ): Promise<StitchRequestResult> {
   try {
+    let logoStoragePath = logoPathFor(
+      prospect,
+      includeLogoFailuresAsNoLogo,
+    );
+
+    if (logoStoragePath !== null) {
+      try {
+        const logo = await store.readLogo(logoStoragePath);
+        await validateTransparentPng(logo);
+      } catch {
+        logoStoragePath = null;
+      }
+    }
+
     const request = buildStitchRequest(prospect, {
       includeLogoFailuresAsNoLogo,
+      logoStoragePath,
       masterPrompt,
     });
-
-    if (request.logo_storage_path !== null) {
-      const logo = await store.readLogo(request.logo_storage_path);
-      await validateTransparentPng(logo);
-    }
 
     await store.updateProspect(prospect.id, {
       error_message: null,
@@ -348,13 +353,13 @@ export function formatStitchRequestBatchResult(
     `Failed: ${result.failed}`,
     `Skipped: ${result.skipped}`,
     "",
-    "| Business | Website | Logo Included | Prompt Prepared | Workflow Status |",
+    "| Business | Website | Logo Available | Logo Instruction Included | Workflow Status |",
     "|---|---|---|---|---|",
   ];
 
   for (const row of result.results) {
     lines.push(
-      `| ${tableCell(row.businessName)} | ${tableCell(row.request?.website ?? "—")} | ${row.request?.has_logo ? "Yes" : "No"} | ${row.request ? "Yes" : "No"} | ${row.workflowStatus} |`,
+      `| ${tableCell(row.businessName)} | ${tableCell(row.request?.website ?? "—")} | ${row.request?.has_logo ? "Yes" : "No"} | ${row.request?.has_logo ? "Yes" : "No"} | ${row.workflowStatus} |`,
     );
     if (row.error) lines.push(`  Error: ${row.error}`);
   }
