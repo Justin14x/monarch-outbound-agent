@@ -190,10 +190,10 @@ Step 5 processes only records with `workflow_status = 'LOGO_FOUND'`, `logo_statu
 npm run logos:make-transparent -- 10
 ```
 
-For every eligible record, the processor downloads the original bytes from the private `prospect-assets` bucket and supplies that file to the official OpenAI Image API `images.edit` method using `gpt-image-2.5-sunburst`. The exact prompt is:
+For every eligible record, the processor downloads the original bytes from the private `prospect-assets` bucket. If the official source asset already has usable transparency, it is preserved exactly and normalized to PNG without a paid generative edit. Otherwise, the file is supplied to the official OpenAI Image API `images.edit` method using the precision-focused `gpt-image-2.5-sunburst` model. The exact prompt is:
 
 ```text
-Generate this logo with a transparent background
+Preserve this exact logo without altering its design, typography, colors, proportions, or spacing. Remove only the background and return the logo as a transparent PNG.
 ```
 
 The API request separately sets `background = 'transparent'` and `output_format = 'png'`. The returned image must pass PNG-signature, decoding, dimensions, alpha-channel, transparent-pixel, and nonblank-content validation. It is uploaded to:

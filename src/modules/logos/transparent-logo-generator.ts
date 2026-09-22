@@ -4,7 +4,7 @@ import sharp from "sharp";
 import { getServerOpenAIClient } from "../../lib/openai/server.js";
 
 export const TRANSPARENT_LOGO_PROMPT =
-  "Generate this logo with a transparent background";
+  "Preserve this exact logo without altering its design, typography, colors, proportions, or spacing. Remove only the background and return the logo as a transparent PNG.";
 export const TRANSPARENT_LOGO_MODEL = "gpt-image-2.5-sunburst";
 
 const MAX_OUTPUT_BYTES = 15 * 1024 * 1024;
@@ -140,6 +140,25 @@ export async function validateTransparentPng(
       "Generated PNG could not be decoded",
       { cause: error },
     );
+  }
+}
+
+export async function preserveExistingTransparentLogo(
+  original: OriginalLogoInput,
+): Promise<Uint8Array | null> {
+  try {
+    const image = sharp(original.body, {
+      failOn: "warning",
+      limitInputPixels: 40_000_000,
+    });
+    const metadata = await image.metadata();
+    if (!metadata.hasAlpha) return null;
+
+    const png = new Uint8Array(await image.png().toBuffer());
+    await validateTransparentPng(png);
+    return png;
+  } catch {
+    return null;
   }
 }
 

@@ -9,6 +9,7 @@ import type {
 import {
   createOpenAITransparentLogoGenerator,
   type OriginalLogoInput,
+  preserveExistingTransparentLogo,
   type TransparentLogoGenerator,
   validateTransparentPng,
 } from "./transparent-logo-generator.js";
@@ -248,6 +249,23 @@ async function processProspect(
       workflow_status: "LOGO_PROCESSING",
     });
 
+    const original = await store.downloadOriginal(prospect.original_logo_url);
+    const preservedOriginal = await preserveExistingTransparentLogo(original);
+    if (preservedOriginal !== null) {
+      const path = await store.uploadTransparent(
+        prospect.id,
+        preservedOriginal,
+      );
+      const stored = await store.readStored(path);
+      if (!equalBytes(preservedOriginal, stored)) {
+        throw new TransparentLogoStorageError(
+          `Storage read-back verification failed for ${path}: bytes did not match`,
+        );
+      }
+      await validateTransparentPng(stored);
+      return await markReady(prospect, store, path, true);
+    }
+
     const existing = await store.readExistingTransparent(prospect.id);
     if (existing) {
       await validateTransparentPng(existing);
@@ -259,7 +277,6 @@ async function processProspect(
       );
     }
 
-    const original = await store.downloadOriginal(prospect.original_logo_url);
     const generated = await generator.generate(original);
     const validated = await validateTransparentPng(generated);
     const path = await store.uploadTransparent(prospect.id, validated.body);

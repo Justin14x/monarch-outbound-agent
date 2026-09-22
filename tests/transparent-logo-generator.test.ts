@@ -66,10 +66,11 @@ describe("transparent logo generation", () => {
       background: "transparent",
       model: TRANSPARENT_LOGO_MODEL,
       output_format: "png",
-      prompt: "Generate this logo with a transparent background",
+      prompt:
+        "Preserve this exact logo without altering its design, typography, colors, proportions, or spacing. Remove only the background and return the logo as a transparent PNG.",
     });
     expect(TRANSPARENT_LOGO_PROMPT).toBe(
-      "Generate this logo with a transparent background",
+      "Preserve this exact logo without altering its design, typography, colors, proportions, or spacing. Remove only the background and return the logo as a transparent PNG.",
     );
     expect(edit.mock.calls[0]?.[0].image).toBeInstanceOf(File);
   });

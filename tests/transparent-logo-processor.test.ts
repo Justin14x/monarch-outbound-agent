@@ -5,7 +5,10 @@ import {
   processTransparentLogos,
   type TransparentLogoStore,
 } from "../src/modules/logos/transparent-logo-processor.js";
-import type { TransparentLogoGenerator } from "../src/modules/logos/transparent-logo-generator.js";
+import {
+  type TransparentLogoGenerator,
+  validateTransparentPng,
+} from "../src/modules/logos/transparent-logo-generator.js";
 import type { Prospect } from "../src/modules/prospects/prospect.types.js";
 
 function prospect(
@@ -272,7 +275,30 @@ describe("transparent logo processor", () => {
     expect(result).toMatchObject({ ready: 1, failed: 0 });
     expect(result.results[0]).toMatchObject({ reusedExistingAsset: true });
     expect(generate).not.toHaveBeenCalled();
-    expect(downloadOriginal).not.toHaveBeenCalled();
+    expect(downloadOriginal).toHaveBeenCalledWith(item.original_logo_url);
     expect(uploadTransparent).not.toHaveBeenCalled();
+  });
+
+  it("preserves an already-transparent original without a paid API call", async () => {
+    const item = prospect("already-transparent");
+    const { store, uploadTransparent } = createStore([item], {
+      original: generatedPng,
+      readBack: generatedPng,
+    });
+    const generate = vi.fn();
+
+    const result = await processTransparentLogos({
+      generator: { generate },
+      store,
+    });
+
+    expect(result).toMatchObject({ ready: 1, failed: 0 });
+    expect(result.results[0]).toMatchObject({ reusedExistingAsset: true });
+    expect(generate).not.toHaveBeenCalled();
+    expect(uploadTransparent).toHaveBeenCalledOnce();
+    expect(uploadTransparent.mock.calls[0]?.[0]).toBe(item.id);
+    await expect(
+      validateTransparentPng(uploadTransparent.mock.calls[0]?.[1]),
+    ).resolves.toMatchObject({ height: 64, width: 128 });
   });
 });
