@@ -5,4 +5,7 @@ dist/
 !.env.example
 .DS_Store
 coverage/
+output/
 supabase/.temp/
+.gmail-oauth-token.json
+.gmail-draft.lock

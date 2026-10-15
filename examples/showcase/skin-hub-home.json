@@ -1,0 +1,48 @@
+{
+  "businessName": "Skin Hub Med Spa",
+  "website": "https://skinhubmedspa.com/",
+  "brandAccent": "#c19557",
+  "logoSurface": "dark",
+  "eyebrow": "SKIN HUB MED SPA",
+  "headline": ["Your Best", "Glow"],
+  "description": ["Personalized treatments.", "A little time for you."],
+  "cta": "Explore & book",
+  "categories": ["Injectables", "Lasers", "Facials", "Body", "Wellness"],
+  "announcementEyebrow": "DISCOVER MORE",
+  "announcementHeadline": ["Your Skin Hub", "Experience"],
+  "announcementDetail": "Explore care made for you",
+  "featuresTitle": "Featured Treatments",
+  "features": [
+    { "title": "Injectables", "subtitle": "Explore treatments" },
+    { "title": "Hydrafacial", "subtitle": "Refresh your glow" },
+    { "title": "Laser", "subtitle": "Discover your options" }
+  ],
+  "assets": {
+    "logo": {
+      "path": "showcase/skin-hub/logo-wordmark.png",
+      "sourceUrl": "https://skinhubmedspa.com/wp-content/uploads/2024/12/logo-skin-hub-black-600x200.png"
+    },
+    "hero": {
+      "path": "showcase/skin-hub/woman-source.png",
+      "sourceUrl": "https://skinhubmedspa.com/wp-content/uploads/2024/12/sensual-beautiful-woman-touching-face-smiling-1.png"
+    },
+    "announcement": {
+      "path": "showcase/skin-hub/event-source.jpg",
+      "sourceUrl": "https://skinhubmedspa.com/wp-content/uploads/2024/12/449621321_325122707321872_487083282404266525_n.jpg"
+    },
+    "features": [
+      {
+        "path": "showcase/skin-hub/hero.jpg",
+        "sourceUrl": "https://skinhubmedspa.com/wp-content/uploads/elementor/thumbs/2148825340-qxykzdtnpy23salj70qcvhvep17oe6jcgi3s77id90.jpg"
+      },
+      {
+        "path": "showcase/skin-hub/facial.jpg",
+        "sourceUrl": "https://skinhubmedspa.com/wp-content/uploads/elementor/thumbs/beautician-with-brush-applies-white-moisturizing-mask-face-young-girl-client-spa-beauty-salon-1-scaled-qy6axoty5rxq0bvpeau6cfuav9eltqvlj496dj26xg.jpg"
+      },
+      {
+        "path": "showcase/skin-hub/laser.jpg",
+        "sourceUrl": "https://skinhubmedspa.com/wp-content/uploads/elementor/thumbs/woman-cosmetology-studio-laser-hair-removal-qy6auw97ui41i1xspld3fn7zb16by4sbhag80x7bf8.jpg"
+      }
+    ]
+  }
+}

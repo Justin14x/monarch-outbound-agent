@@ -1,6 +1,6 @@
 import {
-  MONARCH_STITCH_LOGO_INSTRUCTION,
   MONARCH_STITCH_PROMPT,
+  renderMonarchStitchPrompt,
 } from "../../config/stitch-prompt.js";
 import {
   getServerSupabaseClient,
@@ -150,10 +150,6 @@ export function buildStitchRequest(
   }
 
   const masterPrompt = options.masterPrompt ?? MONARCH_STITCH_PROMPT;
-  const promptTemplate = masterPrompt.trim();
-  if (!promptTemplate) {
-    throw new StitchRequestError("master Stitch prompt is required");
-  }
   const logoStoragePath =
     "logoStoragePath" in options
       ? (options.logoStoragePath ?? null)
@@ -161,13 +157,12 @@ export function buildStitchRequest(
           prospect,
           options.includeLogoFailuresAsNoLogo ?? false,
         );
-  const stitchPrompt = [
-    promptTemplate,
-    logoStoragePath === null ? null : MONARCH_STITCH_LOGO_INSTRUCTION,
-    `This is the website: ${website}`,
-  ]
-    .filter((part): part is string => part !== null)
-    .join(" ");
+  let stitchPrompt: string;
+  try {
+    stitchPrompt = renderMonarchStitchPrompt(businessName, website, masterPrompt);
+  } catch (error) {
+    throw new StitchRequestError(errorMessage(error), { cause: error });
+  }
 
   return {
     business_name: businessName,
@@ -359,7 +354,7 @@ export function formatStitchRequestBatchResult(
 
   for (const row of result.results) {
     lines.push(
-      `| ${tableCell(row.businessName)} | ${tableCell(row.request?.website ?? "—")} | ${row.request?.has_logo ? "Yes" : "No"} | ${row.request?.has_logo ? "Yes" : "No"} | ${row.workflowStatus} |`,
+      `| ${tableCell(row.businessName)} | ${tableCell(row.request?.website ?? "—")} | ${row.request?.has_logo ? "Yes" : "No"} | No | ${row.workflowStatus} |`,
     );
     if (row.error) lines.push(`  Error: ${row.error}`);
   }

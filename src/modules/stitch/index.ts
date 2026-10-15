@@ -12,3 +12,16 @@ export type {
   StitchRequestResult,
   StitchRequestStore,
 } from "./stitch-request-builder.js";
+export {
+  createSupabaseStitchGenerationStore,
+  formatStitchGenerationResult,
+  generateStitchApps,
+  StitchGenerationError,
+} from "./stitch-generator.js";
+export type {
+  GenerateStitchAppsOptions,
+  StitchGenerationBatchResult,
+  StitchGenerationResult,
+  StitchGenerationStore,
+  StoredStitchScreen,
+} from "./stitch-generator.js";

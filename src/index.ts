@@ -3,4 +3,5 @@ export { getServerOpenAIClient } from "./lib/openai/server.js";
 export * from "./modules/logos/index.js";
 export * from "./modules/prospects/index.js";
 export * from "./modules/stitch/index.js";
+export * from "./modules/emails/index.js";
 export type { Database, Json } from "./types/database.generated.js";
