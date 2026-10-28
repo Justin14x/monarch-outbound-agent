@@ -1,14 +1,14 @@
 import type { GmailDraftGateway, GmailDraftRecord } from "../../lib/gmail/server.js";
 import { withGmailDraftLock } from "../../lib/gmail/draft-lock.js";
+import { MONARCH_OUTREACH_VISUAL_SENTENCE } from "../../config/outreach-email-template.js";
 import { getServerSupabaseClient, type MonarchServerSupabaseClient } from "../../lib/supabase/server.js";
 import type { Prospect } from "../prospects/prospect.types.js";
 import {
   buildGmailDraftRaw,
+  combineEmailScreenshots,
   createSupabaseGmailConceptImageStore,
   findConceptImagePaths,
   GmailDraftError,
-  hasMonarchSignatureLine,
-  loadMonarchSignatureLogo,
   type GmailConceptImageStore,
 } from "./gmail-draft-creator.js";
 
@@ -83,13 +83,14 @@ async function enhanceGmailDraftUnlocked(options: EnhanceGmailDraftOptions) {
   }
   const imageStore = options.imageStore ?? createSupabaseGmailConceptImageStore();
   const images = await Promise.all(imagePaths.map((path) => imageStore.downloadEmailImage(path)));
-  const signaturePng = hasMonarchSignatureLine(prospect.email_body)
-    ? await loadMonarchSignatureLogo()
-    : undefined;
+  if (prospect.email_body.includes(MONARCH_OUTREACH_VISUAL_SENTENCE) && images.length !== 3) {
+    throw new GmailDraftError("The approved outreach copy requires exactly three stored app screenshots");
+  }
+  const showcase = images.length === 3 ? await combineEmailScreenshots(images) : images[0];
   const raw = buildGmailDraftRaw({
     ...prospect,
     workflow_status: "EMAIL_GENERATED",
-  }, server.senderEmail, images, signaturePng);
+  }, server.senderEmail, showcase);
   const draftId = await server.gateway.updateDraft(prospect.gmail_draft_id, raw);
   const updated = await server.gateway.getDraft(draftId);
   if (!matchesExistingDraft(updated, prospect)) {

@@ -11,6 +11,7 @@ import { getServerGoogleOAuthClient } from "../gmail/server.js";
 export interface LeadSheetRow {
   rowNumber: number;
   businessName: string;
+  businessEmail: string;
   website: string;
   outreach: string;
   response: string;
@@ -47,6 +48,7 @@ export function createGoogleLeadSheetGateway(sheets: sheets_v4.Sheets): LeadShee
         return [{
           rowNumber: index + 2,
           businessName,
+          businessEmail: row[1]?.trim() ?? "",
           website,
           outreach: row[3]?.trim() ?? "",
           response: row[4]?.trim() ?? "",

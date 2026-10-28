@@ -16,6 +16,7 @@ describe("lead sheet gateway", () => {
     expect(await test.gateway.readRows()).toEqual([{
       rowNumber: 2,
       businessName: "Skin Hub Med Spa",
+      businessEmail: "hello@example.com",
       website: "https://skinhubmedspa.com/",
       outreach: "Not Sent",
       response: "No Response",

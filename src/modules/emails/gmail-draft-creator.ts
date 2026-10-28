@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import sharp from "sharp";
 
 import type { GmailDraftGateway } from "../../lib/gmail/server.js";
 import { withGmailDraftLock } from "../../lib/gmail/draft-lock.js";
+import { GMAIL_SENDER_DISPLAY_NAME } from "../../config/gmail.js";
 import {
   MONARCH_OUTREACH_PLAIN_VISUAL_SENTENCE,
   MONARCH_OUTREACH_SIGNATURE_LABEL,
@@ -60,8 +60,8 @@ export class GmailDraftError extends Error {
   }
 }
 
-function validEmail(value: string): boolean {
-  return /^[^\s@<>,;:]+@[^\s@<>,;:]+\.[^\s@<>,;:]+$/.test(value) &&
+export function validEmail(value: string): boolean {
+  return /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,63}$/i.test(value) &&
     !/[\r\n\x00-\x1f\x7f]/.test(value);
 }
 
@@ -79,17 +79,33 @@ const JPEG_SIGNATURE = Buffer.from([255, 216, 255]);
 const MAX_INLINE_IMAGE_BYTES = 15 * 1024 * 1024;
 const MAX_TOTAL_INLINE_IMAGE_BYTES = 18 * 1024 * 1024;
 const MAX_SHOWCASE_SCREENS = 3;
+const SHOWCASE_WIDTH = 1800;
+const SHOWCASE_PADDING = 60;
+const SHOWCASE_GAP = 30;
+const SHOWCASE_SCREEN_WIDTH = Math.floor((SHOWCASE_WIDTH - 2 * SHOWCASE_PADDING - 2 * SHOWCASE_GAP) / 3);
+const DEFAULT_SIGNATURE_LOGO_URL =
+  "https://raw.githubusercontent.com/Justin14x/monarch-outbound-agent/4b8c841637aee6cc1036cb642fc7e8e1942c5ada/assets/monarch-systems-logo.png";
 
 export function hasMonarchSignatureLine(body: string): boolean {
   return body.replace(/\r\n|\r/g, "\n").trimEnd().endsWith(`\n${MONARCH_OUTREACH_SIGNATURE_LABEL}`);
 }
 
-export async function loadMonarchSignatureLogo(): Promise<Buffer> {
-  const source = await readFile(new URL("../../../assets/monarch-systems-logo.png", import.meta.url));
-  return sharp(source)
-    .resize({ width: 48, height: 48, fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .png({ palette: true })
-    .toBuffer();
+function validatedSignatureLogoUrl(value: string | null | undefined): string | null {
+  value = value?.trim();
+  if (!value) return null;
+  let url: URL;
+  try { url = new URL(value); } catch { throw new GmailDraftError("MONARCH_SIGNATURE_LOGO_URL must be an HTTPS image URL"); }
+  const ownedWebsite = ["monarchsystems.app", "www.monarchsystems.app"].includes(url.hostname);
+  const pinnedRepositoryAsset = url.toString() === DEFAULT_SIGNATURE_LOGO_URL;
+  if (url.protocol !== "https:" || (!ownedWebsite && !pinnedRepositoryAsset) ||
+      url.username || url.password || url.search || url.hash) {
+    throw new GmailDraftError("MONARCH_SIGNATURE_LOGO_URL must be a stable HTTPS URL on monarchsystems.app");
+  }
+  return url.toString();
+}
+
+export function monarchSignatureLogoUrl(environment: NodeJS.ProcessEnv = process.env): string | null {
+  return validatedSignatureLogoUrl(environment.MONARCH_SIGNATURE_LOGO_URL?.trim() || DEFAULT_SIGNATURE_LOGO_URL);
 }
 
 export function findConceptImagePaths(prospect: Prospect): string[] {
@@ -142,6 +158,34 @@ export async function optimizeEmailScreenshot(source: Buffer): Promise<Buffer> {
     .jpeg({ quality: 86, mozjpeg: true, progressive: false }).toBuffer();
 }
 
+export async function combineEmailScreenshots(images: readonly Buffer[]): Promise<Buffer> {
+  if (images.length !== MAX_SHOWCASE_SCREENS) {
+    throw new GmailDraftError("The email showcase requires exactly three app screenshots");
+  }
+  const resized = await Promise.all(images.map(async (image) => {
+    const metadata = await sharp(image).metadata();
+    if (!["png", "jpeg"].includes(metadata.format ?? "") || !metadata.width || !metadata.height ||
+        metadata.height / metadata.width > 3 || metadata.height / metadata.width < 1.1) {
+      throw new GmailDraftError("App screenshot has an unsupported format or aspect ratio");
+    }
+    const data = await sharp(image).resize({ width: SHOWCASE_SCREEN_WIDTH }).jpeg({ quality: 86 }).toBuffer();
+    const resizedMetadata = await sharp(data).metadata();
+    return { data, height: resizedMetadata.height! };
+  }));
+  const height = Math.max(...resized.map((image) => image.height)) + 2 * SHOWCASE_PADDING;
+  const composite = await sharp({
+    create: { width: SHOWCASE_WIDTH, height, channels: 3, background: "#f3f1ee" },
+  }).composite(resized.map((image, index) => ({
+    input: image.data,
+    left: SHOWCASE_PADDING + index * (SHOWCASE_SCREEN_WIDTH + SHOWCASE_GAP),
+    top: SHOWCASE_PADDING,
+  }))).jpeg({ quality: 88, mozjpeg: true }).toBuffer();
+  if (composite.length > MAX_INLINE_IMAGE_BYTES) {
+    throw new GmailDraftError("Combined app showcase is too large for an inline Gmail draft");
+  }
+  return composite;
+}
+
 function base64Lines(value: Buffer | string): string {
   const encoded = Buffer.isBuffer(value) ? value.toString("base64") : Buffer.from(value, "utf8").toString("base64");
   return encoded.match(/.{1,76}/g)?.join("\r\n") ?? "";
@@ -155,47 +199,33 @@ function escapeHtml(value: string): string {
 
 function renderShowcase(contentIds: readonly string[], businessName: string): string {
   if (contentIds.length === 0) return "";
-  if (contentIds.length === 1) {
-    return `<p><img src="cid:${contentIds[0]}" alt="${escapeHtml(businessName)} mobile app concept" width="260" style="display:block;width:100%;max-width:260px;height:auto;border:0"></p>`;
-  }
-  const columnWidth = Math.floor(600 / contentIds.length);
-  const imageWidth = columnWidth - 12;
-  const cells = contentIds.map((contentId, index) =>
-    `<td class="monarch-screen-cell" width="${columnWidth}" valign="top" style="width:${Math.floor(100 / contentIds.length)}%;padding:0 6px;vertical-align:top">` +
-    `<img class="monarch-screen-image" src="cid:${contentId}" alt="${escapeHtml(businessName)} ${["Home", "Booking", "Community"][index] ?? `screen ${index + 1}`} app concept" width="${imageWidth}" style="display:block;width:100%;max-width:${imageWidth}px;height:auto;border:0"></td>`,
-  ).join("");
-  return `<table role="presentation" align="center" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;margin:0 auto;border-collapse:collapse"><tr valign="top">${cells}</tr></table>`;
+  return `<table role="presentation" align="center" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;margin:0 auto;border-collapse:collapse"><tr><td align="center"><img src="cid:${contentIds[0]}" alt="${escapeHtml(businessName)} Home, Booking, and Community app concepts" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0"></td></tr></table>`;
 }
 
-function renderHtmlBody(body: string, contentIds: readonly string[], signatureContentId: string | null, businessName: string): string {
+function renderHtmlBody(body: string, contentIds: readonly string[], signatureLogoUrl: string | null, businessName: string): string {
   const paragraphs = body.replace(/\r\n|\r/g, "\n").split(/\n\s*\n/);
   const visualIndex = paragraphs.findIndex((paragraph) => paragraph.trim() === MONARCH_OUTREACH_VISUAL_SENTENCE);
   const insertAfter = Math.min(1, paragraphs.length - 1);
   const html = paragraphs.flatMap((paragraph, index) => {
     if (index === visualIndex) return [renderShowcase(contentIds, businessName)];
     const lines = paragraph.split("\n");
-    const renderedLines = lines.map((line, lineIndex) =>
-      index === paragraphs.length - 1 &&
-      lineIndex === lines.length - 1 &&
+    const renderedLines = lines.map((line) =>
       line === MONARCH_OUTREACH_SIGNATURE_LABEL
-        ? `${signatureContentId ? `<img src="cid:${signatureContentId}" alt="" width="24" height="24" style="display:inline-block;width:24px;height:24px;vertical-align:middle;border:0;border-radius:4px">&nbsp;` : ""}<a href="${escapeHtml(MONARCH_OUTREACH_SIGNATURE_URL)}">${escapeHtml(MONARCH_OUTREACH_SIGNATURE_LABEL)}</a>`
+        ? `${signatureLogoUrl ? `<img src="${escapeHtml(signatureLogoUrl)}" alt="" width="24" height="24" style="display:inline-block;width:24px;height:24px;vertical-align:middle;border:0;border-radius:4px">&nbsp;` : ""}<a href="${escapeHtml(MONARCH_OUTREACH_SIGNATURE_URL)}">${escapeHtml(MONARCH_OUTREACH_SIGNATURE_LABEL)}</a>`
         : escapeHtml(line),
     );
     const parts = [`<p>${renderedLines.join("<br>")}</p>`];
     if (visualIndex < 0 && contentIds.length && index === insertAfter) parts.push(renderShowcase(contentIds, businessName));
     return parts;
   }).join("\r\n");
-  const styles = contentIds.length > 1
-    ? `<style>@media screen and (max-width:600px){.monarch-screen-cell{display:block!important;width:100%!important;padding:0 0 12px!important}.monarch-screen-image{width:100%!important;max-width:260px!important}}</style>`
-    : "";
-  return `<!doctype html><html><head>${styles}</head><body>${html}</body></html>`;
+  return `<!doctype html><html><body>${html}</body></html>`;
 }
 
 export function buildGmailDraftRaw(
   prospect: Prospect,
   senderEmail: string,
-  inlineImages?: Buffer | readonly Buffer[],
-  signaturePng?: Buffer,
+  inlineImage?: Buffer,
+  signatureLogoUrl: string | null = monarchSignatureLogoUrl(),
 ): string {
   if (prospect.workflow_status !== "EMAIL_GENERATED" || !prospect.email_verified) {
     throw new GmailDraftError("Prospect is not eligible for Gmail draft creation");
@@ -211,9 +241,8 @@ export function buildGmailDraftRaw(
   if (!/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(prospect.id)) {
     throw new GmailDraftError("Prospect ID must be a UUID");
   }
-  const images = inlineImages ? (Buffer.isBuffer(inlineImages) ? [inlineImages] : [...inlineImages]) : [];
-  if (images.length > MAX_SHOWCASE_SCREENS) throw new GmailDraftError("The email showcase supports at most three screens");
-  if (images.reduce((total, image) => total + image.length, signaturePng?.length ?? 0) > MAX_TOTAL_INLINE_IMAGE_BYTES) {
+  const images = inlineImage ? [inlineImage] : [];
+  if (images.reduce((total, image) => total + image.length, 0) > MAX_TOTAL_INLINE_IMAGE_BYTES) {
     throw new GmailDraftError("Combined app concept images are too large for an inline Gmail draft");
   }
   for (const image of images) {
@@ -223,14 +252,8 @@ export function buildGmailDraftRaw(
       throw new GmailDraftError("Inline app concept must be a valid PNG or JPEG within 15 MB");
     }
   }
-  if (signaturePng && (!hasMonarchSignatureLine(prospect.email_body) ||
-      signaturePng.length < PNG_SIGNATURE.length ||
-      signaturePng.length > MAX_INLINE_IMAGE_BYTES ||
-      !signaturePng.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE))) {
-    throw new GmailDraftError("A Monarch signature logo requires a matching signature and valid PNG");
-  }
-  if (prospect.email_body.includes(MONARCH_OUTREACH_VISUAL_SENTENCE) && images.length !== 3) {
-    throw new GmailDraftError("The approved outreach copy requires exactly three inline app screenshots");
+  if (prospect.email_body.includes(MONARCH_OUTREACH_VISUAL_SENTENCE) && images.length !== 1) {
+    throw new GmailDraftError("The approved outreach copy requires one combined inline app showcase");
   }
   const plainBody = prospect.email_body.replace(
     MONARCH_OUTREACH_VISUAL_SENTENCE,
@@ -240,17 +263,13 @@ export function buildGmailDraftRaw(
   // A Content-ID identifies a MIME part globally, not just within one prospect.
   // Fresh IDs also keep repeated test sends and draft replacements independent.
   const mimeNonce = randomUUID().replaceAll("-", "");
-  const contentIds = images.map((_, index) =>
-    `app-concept-${prospect.id}-${mimeNonce}${index ? `-${index + 1}` : ""}@monarch.local`,
-  );
-  const signatureContentId = signaturePng
-    ? `monarch-signature-${prospect.id}-${mimeNonce}@monarch.local`
-    : null;
+  const contentIds = images.map(() => `app-concept-${prospect.id}-${mimeNonce}@monarch.local`);
+  signatureLogoUrl = validatedSignatureLogoUrl(signatureLogoUrl);
   const alternative = `monarch-alt-${prospect.id}-${mimeNonce}`;
   const related = `monarch-related-${prospect.id}-${mimeNonce}`;
-  const hasInlineImages = images.length > 0 || Boolean(signaturePng);
+  const hasInlineImages = images.length > 0;
   const headers = [
-    `From: ${sender}`,
+    `From: ${GMAIL_SENDER_DISPLAY_NAME} <${sender}>`,
     `To: ${recipient}`,
     `Subject: ${headerValue(prospect.email_subject, "Email subject")}`,
     `X-Monarch-Prospect-ID: ${prospect.id}`,
@@ -273,7 +292,7 @@ export function buildGmailDraftRaw(
     "Content-Type: text/html; charset=UTF-8",
     "Content-Transfer-Encoding: base64",
     "",
-    base64Lines(renderHtmlBody(prospect.email_body, contentIds, signatureContentId, prospect.business_name)),
+    base64Lines(renderHtmlBody(prospect.email_body, contentIds, signatureLogoUrl, prospect.business_name)),
     `--${alternative}--`,
   );
   for (const [index, image] of images.entries()) {
@@ -289,15 +308,6 @@ export function buildGmailDraftRaw(
     base64Lines(image),
   );
   }
-  if (signaturePng && signatureContentId) parts.push(
-    `--${related}`,
-    "Content-Type: image/png",
-    "Content-Transfer-Encoding: base64",
-    'Content-Disposition: inline; filename="monarch-systems-logo.png"',
-    `Content-ID: <${signatureContentId}>`,
-    "",
-    base64Lines(signaturePng),
-  );
   if (hasInlineImages) parts.push(`--${related}--`);
   const mime = [...headers, ...parts, ""].join("\r\n");
   return Buffer.from(mime, "utf8").toString("base64url");
@@ -410,10 +420,13 @@ async function createGmailDraftsUnlocked(
           const inlineImages = imageStore
             ? await Promise.all(imagePaths.map((path) => imageStore.downloadEmailImage(path)))
             : [];
-          const signaturePng = prospect.email_body && hasMonarchSignatureLine(prospect.email_body)
-            ? await loadMonarchSignatureLogo()
-            : undefined;
-          const raw = buildGmailDraftRaw(prospect, server.senderEmail, inlineImages, signaturePng);
+          if (prospect.email_body?.includes(MONARCH_OUTREACH_VISUAL_SENTENCE) && inlineImages.length !== 3) {
+            throw new GmailDraftError("The approved outreach copy requires exactly three stored app screenshots");
+          }
+          const showcase = inlineImages.length === 3
+            ? await combineEmailScreenshots(inlineImages)
+            : inlineImages[0];
+          const raw = buildGmailDraftRaw(prospect, server.senderEmail, showcase);
           draftId = await server.gateway.createDraft(raw);
           status = "CREATED";
         }

@@ -36,6 +36,7 @@ function prospect(
     retry_count: 0,
     sent_at: null,
     stitch_project_id: null,
+    stitch_attempt: null,
     stitch_prompt: null,
     stitch_status: null,
     transparent_logo_url: null,

@@ -20,9 +20,9 @@ describe("lead sheet prospect import", () => {
     };
     const sheet: LeadSheetGateway = {
       readRows: async () => [
-        { rowNumber: 2, businessName: "Skin Hub Med Spa", website: "https://www.skinhubmedspa.com/", outreach: "Not Sent", response: "No Response" },
-        { rowNumber: 4, businessName: "Other Spa", website: "http://otherspa.example/", outreach: "Not Sent", response: "No Response" },
-        { rowNumber: 7, businessName: "Bad Spa", website: "not a website", outreach: "Not Sent", response: "No Response" },
+        { rowNumber: 2, businessName: "Skin Hub Med Spa", businessEmail: "hello@skinhubmedspa.com", website: "https://www.skinhubmedspa.com/", outreach: "Not Sent", response: "No Response" },
+        { rowNumber: 4, businessName: "Other Spa", businessEmail: "info@otherspa.example", website: "http://otherspa.example/", outreach: "Not Sent", response: "No Response" },
+        { rowNumber: 7, businessName: "Bad Spa", businessEmail: "bad@example.com", website: "not a website", outreach: "Not Sent", response: "No Response" },
       ],
       writeStatuses: async () => { throw new Error("import must not write sheet statuses"); },
     };

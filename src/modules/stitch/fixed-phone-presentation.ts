@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import sharp from "sharp";
 
 import { verifyBlackPhoneFrame } from "./phone-frame-verifier.js";
@@ -10,6 +11,49 @@ export const FIXED_PHONE_CANVAS = {
   phone: { left: 90, top: 36, width: 756, height: 1732, radius: 104 },
   screen: { left: 114, top: 60, width: 708, height: 1684, radius: 82 },
 } as const;
+
+/** Validate the pixels this module draws, not content-dependent inferred bezel widths. */
+export async function assertFixedPhonePresentation(png: Uint8Array): Promise<void> {
+  const { width, height, phone } = FIXED_PHONE_CANVAS;
+  const { data, info } = await sharp(png).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  if (info.width !== width || info.height !== height) {
+    throw new Error("Stored PNG does not use the fixed presentation canvas");
+  }
+  const dark = (x: number, y: number) => {
+    const offset = (y * width + x) * info.channels;
+    return Math.max(data[offset]!, data[offset + 1]!, data[offset + 2]!) < 65;
+  };
+  const midX = phone.left + Math.floor(phone.width / 2);
+  const midY = phone.top + Math.floor(phone.height / 2);
+  if (!dark(phone.left + 10, midY) ||
+      !dark(phone.left + phone.width - 11, midY) ||
+      !dark(midX, phone.top + 10) ||
+      !dark(midX, phone.top + phone.height - 11) ||
+      !dark(midX, 105)) {
+    throw new Error("Stored PNG is missing the canonical black phone shell or Dynamic Island");
+  }
+}
+
+/** Hash only the canonical canvas/hardware pixels; app UI never enters these strips. */
+export async function fixedPhoneShellFingerprint(png: Uint8Array): Promise<string> {
+  await assertFixedPhonePresentation(png);
+  const { width, height, screen } = FIXED_PHONE_CANVAS;
+  const { data, info } = await sharp(png).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const digest = createHash("sha256");
+  for (let y = 0; y < height; y += 1) {
+    const row = y * width * info.channels;
+    if (y < screen.top || y >= screen.top + screen.height) {
+      digest.update(data.subarray(row, row + width * info.channels));
+    } else {
+      digest.update(data.subarray(row, row + screen.left * info.channels));
+      digest.update(data.subarray(
+        row + (screen.left + screen.width) * info.channels,
+        row + width * info.channels,
+      ));
+    }
+  }
+  return digest.digest("hex");
+}
 
 function imageBounds(bounds: NonNullable<Awaited<ReturnType<typeof verifyBlackPhoneFrame>>["innerBounds"]>,
   width: number, height: number) {

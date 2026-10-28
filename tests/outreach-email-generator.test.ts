@@ -30,6 +30,7 @@ function prospect(overrides: Partial<Prospect> = {}): Prospect {
     retry_count: 0,
     sent_at: null,
     stitch_project_id: null,
+    stitch_attempt: null,
     stitch_prompt: null,
     stitch_status: "FAILED",
     transparent_logo_url: null,
@@ -48,15 +49,19 @@ describe("approved outreach email template", () => {
       subject: "A mobile app idea for Skin Hub Med Spa",
       body: `Hi Skin Hub Med Spa team,
 
-I'm Justin, founder of Monarch Systems. I have an idea for a branded app that could make treatments easier to book and help clients stay connected to Skin Hub Med Spa between visits.
+An industry report found that 73% of med spa patients are repeat customers, highlighting how important it is to keep clients coming back. A branded mobile app can help encourage those repeat visits.
 
-If you're interested, I can share a more detailed interactive prototype.
+I have an idea for a branded app that could make treatments easier to book and help clients stay connected to Skin Hub Med Spa between visits.
+
+If the idea interests you, I can share a more detailed interactive prototype.
 
 If you'd prefer no follow-up, just reply and I'll make sure of it.
 
 Best,
 Justin
-Monarch Systems`,
+Monarch Systems
+
+505 Boyett St #A, College Station, TX 77840`,
       hasVisual: false,
     });
   });
@@ -76,7 +81,9 @@ Monarch Systems`,
       subject: "A mobile app idea for Skin Hub Med Spa",
       body: `Hi Skin Hub Med Spa team,
 
-I'm Justin, founder of Monarch Systems. I put together three screens showing what a branded app for Skin Hub Med Spa could look like—making treatments easier to book and helping clients stay connected between visits.
+An industry report found that 73% of med spa patients are repeat customers, highlighting how important it is to keep clients coming back. A branded mobile app can help encourage those repeat visits.
+
+I put together three screens showing what your own branded mobile app could look like, designed to encourage repeat bookings and keep clients connected to Skin Hub Med Spa between visits.
 
 [Insert three personalized app screenshots]
 
@@ -86,7 +93,9 @@ If you'd prefer no follow-up, just reply and I'll make sure of it.
 
 Best,
 Justin
-Monarch Systems`,
+Monarch Systems
+
+505 Boyett St #A, College Station, TX 77840`,
       hasVisual: true,
     });
   });

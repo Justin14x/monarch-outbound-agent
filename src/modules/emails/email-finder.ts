@@ -6,7 +6,7 @@ import {
 } from "../logos/safe-http.js";
 
 const EMAIL_PATTERN =
-  /[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+/gi;
+  /[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,63}(?![a-z0-9.-])/gi;
 const PRIORITY_LINK =
   /(?:about|contact|connect|leadership|location|management|meet|owner|staff|team)/i;
 const REJECTED_LOCAL_PARTS = new Set([
@@ -179,7 +179,12 @@ function extractCandidates(
   });
 
   $("address, li, p, section, article, footer, header, div").each((_, element) => {
-    const context = $(element).text().replace(/\s+/g, " ").trim();
+    const copy = $(element).clone();
+    // Cheerio's text() joins text across <br> and adjacent elements. An email
+    // followed by a phone number must remain two distinct pieces of text.
+    copy.find("br").replaceWith(" ");
+    copy.find("a, span, p, div, li").each((_, child) => { $(child).after(" "); });
+    const context = copy.text().replace(/\s+/g, " ").trim();
     if (!context || context.length > 1_500) return;
     for (const match of context.matchAll(EMAIL_PATTERN)) {
       add(match[0], context.slice(0, 600), false);

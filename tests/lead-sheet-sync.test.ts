@@ -48,6 +48,7 @@ function fixture(rows: LeadSheetRow[], prospects: Prospect[]) {
 const lead: LeadSheetRow = {
   rowNumber: 2,
   businessName: "Skin Hub Med Spa",
+  businessEmail: "hello@skinhubmedspa.com",
   website: "https://www.skinhubmedspa.com/",
   outreach: "Not Sent",
   response: "No Response",

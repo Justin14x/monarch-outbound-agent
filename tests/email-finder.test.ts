@@ -129,6 +129,41 @@ describe("verified email finder", () => {
     ).rejects.toBeInstanceOf(EmailNotFoundError);
   });
 
+  it("separates an official email from a phone number after a line break", async () => {
+    const finder = createWebsiteEmailFinder({
+      httpClient: {
+        getHtml: vi.fn().mockResolvedValue(resource(
+          "<p>elitemedspa3319@gmail.com<br>214.241.4475</p>",
+          "https://elitemedspaoftexas.com/contact",
+        )),
+      },
+    });
+
+    await expect(finder.find({
+      businessName: "Elite Med Spa of Texas",
+      website: "https://elitemedspaoftexas.com/",
+    })).resolves.toMatchObject({
+      email: "elitemedspa3319@gmail.com",
+      sourceUrl: "https://elitemedspaoftexas.com/contact",
+    });
+  });
+
+  it("rejects a phone number concatenated to an email domain", async () => {
+    const finder = createWebsiteEmailFinder({
+      httpClient: {
+        getHtml: vi.fn().mockResolvedValue(resource(
+          "<p>elitemedspa3319@gmail.com214.241.4475</p>",
+          "https://business.example/contact",
+        )),
+      },
+    });
+
+    await expect(finder.find({
+      businessName: "Business",
+      website: "https://business.example/",
+    })).rejects.toBeInstanceOf(EmailNotFoundError);
+  });
+
   it("distinguishes a technical inspection failure from not found", async () => {
     const finder = createWebsiteEmailFinder({
       httpClient: { getHtml: vi.fn().mockRejectedValue(new Error("DNS failure")) },

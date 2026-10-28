@@ -127,9 +127,51 @@ function inlineContentIds(raw: string): string[] {
   return [...mime.matchAll(/^Content-ID: <([^<>\r\n]+)>\r?$/gm)].map((match) => match[1]!);
 }
 
+function htmlImageContentIds(html: string): string[] {
+  return [...html.matchAll(/<img\b[^>]*\bsrc=["']cid:([^"']+)["'][^>]*>/gi)]
+    .map((match) => match[1]!);
+}
+
+function assertMonarchDraftImagePlacement(draft: gmail_v1.Schema$Draft): void {
+  const root = draft.message?.payload;
+  if (!root || !extractProspectId(draft) || !draft.message?.labelIds?.includes("DRAFT")) return;
+  const parts = mimeParts(root);
+  const images = parts.filter((part) => part.mimeType === "image/png" || part.mimeType === "image/jpeg");
+  if (!images.length) return;
+  const html = parts.find((part) => part.mimeType === "text/html")?.body?.data;
+  if (!html) throw new Error("Monarch Gmail draft is missing its HTML image layout");
+  const screenParts: Array<{ order: number; contentId: string }> = [];
+  let signatureId: string | null = null;
+  for (const part of images) {
+    const filename = part.filename || mimeHeader(part, "Content-Disposition")?.match(/filename="?([^";]+)"?/i)?.[1];
+    const contentId = mimeHeader(part, "Content-ID")?.replace(/^<|>$/g, "");
+    const screen = filename?.match(/^app-screen-(\d+)\.(?:png|jpg)$/i);
+    if (!contentId || !/^inline(?:;|$)/i.test(mimeHeader(part, "Content-Disposition") ?? "")) {
+      throw new Error("Monarch Gmail draft has an invalid inline image part");
+    }
+    if (screen) screenParts.push({ order: Number(screen[1]), contentId });
+    else if (filename === "monarch-systems-logo.png" && !signatureId) signatureId = contentId;
+    else throw new Error("Monarch Gmail draft has an unexpected inline image");
+  }
+  screenParts.sort((left, right) => left.order - right.order);
+  const expected = [...screenParts.map((part) => part.contentId), ...(signatureId ? [signatureId] : [])];
+  const actual = htmlImageContentIds(Buffer.from(html, "base64url").toString("utf8"));
+  if (actual.length !== expected.length || actual.some((contentId, index) => contentId !== expected[index])) {
+    throw new Error("Monarch Gmail draft has swapped showcase or signature images");
+  }
+}
+
+function requestedHtmlImageContentIds(mime: string): string[] {
+  const match = mime.match(/Content-Type: text\/html;[^\r\n]*\r\nContent-Transfer-Encoding: base64\r\n\r\n([\s\S]*?)\r\n--/i);
+  if (!match) return [];
+  const html = Buffer.from(match[1]!.replace(/\s/g, ""), "base64").toString("utf8");
+  return htmlImageContentIds(html);
+}
+
 export function assertGmailDraftRetainsInlineImages(
   draft: gmail_v1.Schema$Draft,
   expectedContentIds: readonly string[],
+  expectedHtmlImageOrder: readonly string[] = expectedContentIds,
 ): void {
   if (!expectedContentIds.length) return;
   const root = draft.message?.payload;
@@ -152,13 +194,27 @@ export function assertGmailDraftRetainsInlineImages(
       throw new Error(`Gmail did not retain inline image ${contentId}`);
     }
   }
+  const storedHtmlImageOrder = htmlImageContentIds(htmlText);
+  if (storedHtmlImageOrder.length !== expectedHtmlImageOrder.length ||
+      storedHtmlImageOrder.some((contentId, index) => contentId !== expectedHtmlImageOrder[index])) {
+    throw new Error("Gmail reordered or swapped inline images in the draft HTML");
+  }
 }
 
 async function verifyStoredInlineDraft(gmail: gmail_v1.Gmail, id: string, raw: string): Promise<void> {
   const expectedContentIds = inlineContentIds(raw);
   if (!expectedContentIds.length) return;
+  const mime = Buffer.from(raw, "base64url").toString("utf8");
+  const expectedHtmlImageOrder = requestedHtmlImageContentIds(mime);
+  if (mime.includes("Content-Type: text/html") && expectedHtmlImageOrder.length !== expectedContentIds.length) {
+    throw new Error("Outgoing Gmail draft HTML does not reference each inline image exactly once");
+  }
   const { data } = await gmail.users.drafts.get({ userId: "me", id, format: "full" });
-  assertGmailDraftRetainsInlineImages(data, expectedContentIds);
+  assertGmailDraftRetainsInlineImages(
+    data,
+    expectedContentIds,
+    expectedHtmlImageOrder.length ? expectedHtmlImageOrder : expectedContentIds,
+  );
 }
 
 export function createGoogleGmailDraftGateway(
@@ -193,6 +249,7 @@ export function createGoogleGmailDraftGateway(
           id,
           format: "full",
         });
+        assertMonarchDraftImagePlacement(data);
         return data.id ? {
           id: data.id,
           prospectId: extractProspectId(data),

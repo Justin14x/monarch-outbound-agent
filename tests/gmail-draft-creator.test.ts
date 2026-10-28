@@ -3,10 +3,11 @@ import sharp from "sharp";
 
 import {
   buildGmailDraftRaw,
+  combineEmailScreenshots,
   createGmailDrafts,
   findConceptImagePath,
   findConceptImagePaths,
-  loadMonarchSignatureLogo,
+  monarchSignatureLogoUrl,
   optimizeEmailScreenshot,
   type GmailDraftStore,
 } from "../src/modules/emails/gmail-draft-creator.js";
@@ -51,6 +52,7 @@ function prospect(overrides: Partial<Prospect> = {}): Prospect {
     retry_count: 0,
     sent_at: null,
     stitch_project_id: null,
+    stitch_attempt: null,
     stitch_prompt: null,
     stitch_status: null,
     transparent_logo_url: null,
@@ -108,7 +110,7 @@ describe("Gmail draft MIME", () => {
   it("encodes the verified recipient, subject, body and stable prospect marker", () => {
     const raw = buildGmailDraftRaw(prospect(), "justin@example.com");
     const mime = Buffer.from(raw, "base64url").toString("utf8");
-    expect(mime).toContain("From: justin@example.com\r\n");
+    expect(mime).toContain("From: Justin Olaleye <justin@example.com>\r\n");
     expect(mime).toContain("To: services@skinhubmedspa.com\r\n");
     expect(mime).toContain("Subject: A mobile app idea for Skin Hub Med Spa\r\n");
     expect(mime).toContain(`X-Monarch-Prospect-ID: ${ID}\r\n`);
@@ -135,47 +137,49 @@ describe("Gmail draft MIME", () => {
     expect(Buffer.from(imageBase64 ?? "", "base64")).toEqual(PNG);
   });
 
-  it("embeds optimized JPEG screenshots with matching MIME type and CID", async () => {
+  it("combines three optimized screenshots into one proportional showcase with one CID", async () => {
     const png = await sharp({ create: { width: 936, height: 1804, channels: 3, background: "#f2e9de" } }).png().toBuffer();
     const jpeg = await optimizeEmailScreenshot(png);
     const metadata = await sharp(jpeg).metadata();
     expect(metadata).toMatchObject({ format: "jpeg", width: 564 });
     expect(metadata.height).toBeGreaterThan(1000);
-    const mime = Buffer.from(buildGmailDraftRaw(prospect(), "justin@example.com", [jpeg, jpeg, jpeg]), "base64url").toString("utf8");
+    const combined = await combineEmailScreenshots([jpeg, jpeg, jpeg]);
+    expect(await sharp(combined).metadata()).toMatchObject({ format: "jpeg", width: 1800 });
+    const mime = Buffer.from(buildGmailDraftRaw(prospect(), "justin@example.com", combined), "base64url").toString("utf8");
     const ids = inlineContentIds(mime);
-    expect(mime.match(/Content-Type: image\/jpeg/g)).toHaveLength(3);
+    expect(ids).toHaveLength(1);
+    expect(mime.match(/Content-Type: image\/jpeg/g)).toHaveLength(1);
     expect(mime).toContain('filename="app-screen-1.jpg"');
     for (const id of ids) expect(decodedPart(mime, "text/html")).toContain(`src="cid:${id}"`);
-    expect(decodedPart(mime, "text/html")).toContain('alt="Skin Hub Med Spa Home app concept"');
-    expect(decodedPart(mime, "text/html")).toContain('alt="Skin Hub Med Spa Booking app concept"');
-    expect(decodedPart(mime, "text/html")).toContain('alt="Skin Hub Med Spa Community app concept"');
+    expect(decodedPart(mime, "text/html")).toContain('alt="Skin Hub Med Spa Home, Booking, and Community app concepts"');
   });
 
-  it("renders three separate CID screens in an equal-width, top-aligned presentation table", () => {
-    const screenshots = [
-      PNG,
-      Buffer.concat([PNG, Buffer.from([1])]),
-      Buffer.concat([PNG, Buffer.from([2])]),
-    ];
-    const mime = Buffer.from(buildGmailDraftRaw(prospect(), "justin@example.com", screenshots), "base64url").toString("utf8");
+  it("preserves Home, Booking, Community order and top alignment in the composite", async () => {
+    const colors = ["#ff0000", "#00ff00", "#0000ff"];
+    const sources = await Promise.all(colors.map((color, index) =>
+      sharp({ create: { width: 600, height: 1000 + index * 100, channels: 3, background: color } })
+        .png().toBuffer(),
+    ));
+    const composite = await combineEmailScreenshots(sources);
+    const { data, info } = await sharp(composite).raw().toBuffer({ resolveWithObject: true });
+    expect(info.width).toBe(1800);
+    const pixel = (x: number, y: number) => [...data.subarray((y * info.width + x) * 3, (y * info.width + x) * 3 + 3)];
+    expect(pixel(320, 100)[0]).toBeGreaterThan(200);
+    expect(pixel(900, 100)[1]).toBeGreaterThan(200);
+    expect(pixel(1480, 100)[2]).toBeGreaterThan(200);
+  });
+
+  it("renders the combined showcase at a bounded width without a second image role", () => {
+    const mime = Buffer.from(buildGmailDraftRaw(prospect(), "justin@example.com", PNG), "base64url").toString("utf8");
     const html = decodedPart(mime, "text/html");
     expect(html).toContain('<table role="presentation" align="center" width="100%"');
     expect(html).toContain('max-width:600px;margin:0 auto');
-    expect(html).toContain('max-width:600px');
-    expect(html).toContain('<tr valign="top">');
-    expect((html.match(/class="monarch-screen-cell" width="200" valign="top"/g) ?? [])).toHaveLength(3);
-    expect((html.match(/class="monarch-screen-image"/g) ?? [])).toHaveLength(3);
+    expect(html).toContain('width="600"');
     expect(html).toContain('height:auto');
-    expect(html).toContain('@media screen and (max-width:600px)');
     const contentIds = inlineContentIds(mime);
-    expect(contentIds).toHaveLength(3);
-    for (const [index, image] of screenshots.entries()) {
-      const cid = contentIds[index]!;
-      expect(cid).toMatch(new RegExp(`^app-concept-${ID}-[a-f0-9]{32}${index ? `-${index + 1}` : ""}@monarch\\.local$`));
-      expect(html).toContain(`src="cid:${cid}"`);
-      const encoded = mime.split(`Content-ID: <${cid}>\r\n\r\n`)[1]?.split("\r\n--monarch-related-")[0]?.replaceAll("\r\n", "");
-      expect(Buffer.from(encoded ?? "", "base64")).toEqual(image);
-    }
+    expect(contentIds).toHaveLength(1);
+    expect(contentIds[0]).toMatch(new RegExp(`^app-concept-${ID}-[a-f0-9]{32}@monarch\\.local$`));
+    expect(html).toContain(`src="cid:${contentIds[0]}"`);
     expect(decodedPart(mime, "text/plain")).toBe(prospect().email_body?.replaceAll("\n", "\r\n"));
     expect(mime).not.toContain("supabase.co");
   });
@@ -183,7 +187,7 @@ describe("Gmail draft MIME", () => {
   it("replaces the screenshot placeholder at its exact position without exposing it to recipients", () => {
     const body = `Hi Skin Hub Med Spa team,\n\nClients could easily book their next treatment.\n\n[Insert three personalized app screenshots]\n\nWould you like a quick rundown?`;
     const item = prospect({ email_body: body });
-    const mime = Buffer.from(buildGmailDraftRaw(item, "justin@example.com", [PNG, PNG, PNG]), "base64url").toString("utf8");
+    const mime = Buffer.from(buildGmailDraftRaw(item, "justin@example.com", PNG), "base64url").toString("utf8");
     const html = decodedPart(mime, "text/html");
     const plain = decodedPart(mime, "text/plain");
     expect(html).not.toContain("[Insert three personalized app screenshots]");
@@ -191,60 +195,77 @@ describe("Gmail draft MIME", () => {
     expect(plain).toContain("Three personalized app screenshots are included in the HTML version of this email.");
     expect(html.indexOf("Clients could easily book")).toBeLessThan(html.indexOf('<table role="presentation"'));
     expect(html.indexOf('<table role="presentation"')).toBeLessThan(html.indexOf("Would you like a quick rundown?"));
-    expect((html.match(/class="monarch-screen-image"/g) ?? [])).toHaveLength(3);
-    expect(() => buildGmailDraftRaw(item, "justin@example.com", [PNG, PNG])).toThrow("exactly three");
-    expect(() => buildGmailDraftRaw(item, "justin@example.com")).toThrow("exactly three");
+    expect((html.match(/src="cid:/g) ?? [])).toHaveLength(1);
+    expect(() => buildGmailDraftRaw(item, "justin@example.com")).toThrow("one combined");
+  });
+
+  it("renders the outreach message as ordinary text in HTML and plain text", () => {
+    const item = prospect({
+      email_body: "Hi Skin Hub team,\n\nAn industry report found that 73% of med spa patients are repeat customers. A branded mobile app can help encourage those repeat visits.\n\n[Insert three personalized app screenshots]\n\nBest,\nJustin\nMonarch Systems",
+    });
+    const mime = Buffer.from(buildGmailDraftRaw(item, "justin@example.com", PNG), "base64url").toString("utf8");
+    const html = decodedPart(mime, "text/html");
+    const plain = decodedPart(mime, "text/plain");
+    expect(html).toContain("A branded mobile app can help encourage those repeat visits.</p>");
+    expect(html).not.toContain("<strong>");
+    expect(plain).toContain("A branded mobile app can help encourage those repeat visits.");
+    expect(plain).not.toContain("<strong>");
+    expect(inlineContentIds(mime)).toHaveLength(1);
   });
 
   it("links only the Monarch Systems signature in HTML without a redundant plain-text URL", () => {
     const item = prospect({
-      email_body: "Hi team,\n\nI work with Monarch Systems.\n\nBest,\nJustin\nMonarch Systems",
+      email_body: "Hi team,\n\nI work with Monarch Systems.\n\nBest,\nJustin\nMonarch Systems\n\n505 Boyett St #A, College Station, TX 77840",
     });
-    const mime = Buffer.from(buildGmailDraftRaw(item, "justin@example.com", [PNG, PNG, PNG]), "base64url").toString("utf8");
+    const mime = Buffer.from(buildGmailDraftRaw(item, "justin@example.com", PNG), "base64url").toString("utf8");
     const html = decodedPart(mime, "text/html");
     const plain = decodedPart(mime, "text/plain");
     expect(html).toContain('I work with Monarch Systems.');
-    expect(html).toContain('Best,<br>Justin<br><a href="https://www.monarchsystems.app/">Monarch Systems</a>');
+    expect(html).toContain('Best,<br>Justin<br><img src="https://raw.githubusercontent.com/Justin14x/monarch-outbound-agent/');
+    expect(html).toContain('&nbsp;<a href="https://www.monarchsystems.app/">Monarch Systems</a>');
     expect((html.match(/href="https:\/\/www\.monarchsystems\.app\/"/g) ?? [])).toHaveLength(1);
-    expect((html.match(/class="monarch-screen-image"/g) ?? [])).toHaveLength(3);
+    expect((html.match(/src="cid:/g) ?? [])).toHaveLength(1);
     expect(plain).toContain("Best,\r\nJustin\r\nMonarch Systems");
+    expect(plain).toContain("505 Boyett St #A, College Station, TX 77840");
+    expect(html).toContain("505 Boyett St #A, College Station, TX 77840");
+    expect(html).not.toContain("A business proposal from Monarch Systems.");
+    expect(html).toContain("505 Boyett St #A, College Station, TX 77840");
     expect(plain).not.toContain("https://");
   });
 
-  it("embeds the actual Monarch logo as a fourth CID image beside the linked signature", async () => {
-    const signature = await loadMonarchSignatureLogo();
-    expect(await sharp(signature).metadata()).toMatchObject({ format: "png", width: 48, height: 48 });
+  it("uses a separately hosted Monarch logo without introducing a second CID image", () => {
     const item = prospect({
       email_body: "Hi team,\n\n[Insert three personalized app screenshots]\n\nBest,\nJustin\nMonarch Systems",
     });
-    const mime = Buffer.from(buildGmailDraftRaw(item, "justin@example.com", [PNG, PNG, PNG], signature), "base64url").toString("utf8");
+    const logoUrl = "https://www.monarchsystems.app/assets/logo.png";
+    const mime = Buffer.from(buildGmailDraftRaw(item, "justin@example.com", PNG, logoUrl), "base64url").toString("utf8");
     const html = decodedPart(mime, "text/html");
-    const logoCid = inlineContentIds(mime).find((cid) => cid.startsWith("monarch-signature-"));
-    expect(logoCid).toMatch(new RegExp(`^monarch-signature-${ID}-[a-f0-9]{32}@monarch\\.local$`));
-    expect(signature.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-    expect(mime).toContain(`Content-ID: <${logoCid}>`);
-    expect(mime).toContain('Content-Disposition: inline; filename="monarch-systems-logo.png"');
-    expect((mime.match(/Content-ID: </g) ?? [])).toHaveLength(4);
-    expect(html).toContain(`<img src="cid:${logoCid}" alt="" width="24" height="24"`);
+    const orderedMimeIds = inlineContentIds(mime);
+    expect(orderedMimeIds).toHaveLength(1);
+    expect(orderedMimeIds[0]).toMatch(/^app-concept-/);
+    expect(html).toContain(`<img src="${logoUrl}" alt="" width="24" height="24"`);
     expect(html).toContain(`&nbsp;<a href="https://www.monarchsystems.app/">Monarch Systems</a>`);
-    expect(html.indexOf(`cid:${logoCid}`)).toBeLessThan(html.indexOf('href="https://www.monarchsystems.app/"'));
+    expect(html.indexOf(logoUrl)).toBeLessThan(html.indexOf('href="https://www.monarchsystems.app/"'));
+    expect(monarchSignatureLogoUrl({ MONARCH_SIGNATURE_LOGO_URL: logoUrl })).toBe(logoUrl);
+    expect(monarchSignatureLogoUrl({})).toContain("raw.githubusercontent.com/Justin14x/monarch-outbound-agent/");
+    expect(() => monarchSignatureLogoUrl({ MONARCH_SIGNATURE_LOGO_URL: "http://example.com/logo.png" })).toThrow("stable HTTPS");
+    expect(() => buildGmailDraftRaw(item, "justin@example.com", PNG, "https://example.com/logo.png")).toThrow("stable HTTPS");
   });
 
-  it("uses the same layout for two screens and never stretches image height", () => {
-    const mime = Buffer.from(buildGmailDraftRaw(prospect(), "justin@example.com", [PNG, PNG]), "base64url").toString("utf8");
+  it("never stretches the combined showcase height", () => {
+    const mime = Buffer.from(buildGmailDraftRaw(prospect(), "justin@example.com", PNG), "base64url").toString("utf8");
     const html = decodedPart(mime, "text/html");
-    expect((html.match(/class="monarch-screen-cell" width="300" valign="top"/g) ?? [])).toHaveLength(2);
     expect(html).toContain('height:auto');
     expect(html).not.toMatch(/height="\d+"/);
   });
 
   it("uses fresh globally unique content IDs for each MIME message", () => {
-    const first = Buffer.from(buildGmailDraftRaw(prospect(), "justin@example.com", [PNG, PNG, PNG]), "base64url").toString("utf8");
-    const second = Buffer.from(buildGmailDraftRaw(prospect(), "justin@example.com", [PNG, PNG, PNG]), "base64url").toString("utf8");
+    const first = Buffer.from(buildGmailDraftRaw(prospect(), "justin@example.com", PNG), "base64url").toString("utf8");
+    const second = Buffer.from(buildGmailDraftRaw(prospect(), "justin@example.com", PNG), "base64url").toString("utf8");
     const firstIds = inlineContentIds(first);
     const secondIds = inlineContentIds(second);
-    expect(new Set(firstIds).size).toBe(3);
-    expect(new Set(secondIds).size).toBe(3);
+    expect(new Set(firstIds).size).toBe(1);
+    expect(new Set(secondIds).size).toBe(1);
     expect(firstIds).not.toEqual(secondIds);
     expect(decodedPart(first, "text/html")).toContain(`src="cid:${firstIds[0]}"`);
     expect(decodedPart(second, "text/html")).toContain(`src="cid:${secondIds[0]}"`);
@@ -273,19 +294,20 @@ describe("Gmail draft MIME", () => {
     expect(findConceptImagePath(prospect({ app_image_urls: [{ storage_path: "https://example.com/image.png" }] }))).toBeNull();
   });
 
-  it("deduplicates and caps the showcase at three stored screens", () => {
+  it("deduplicates and caps the showcase at three stored screens", async () => {
     const paths = ["home", "booking", "community", "profile"].map((name) => ({
       screen_id: name, screen_name: name, storage_path: `prospects/${ID}/stitch/${name}.png`,
     }));
     expect(findConceptImagePaths(prospect({ app_image_urls: [...paths, paths[0]!] }))).toEqual(
       paths.slice(0, 3).map((item) => item.storage_path),
     );
-    expect(() => buildGmailDraftRaw(prospect(), "justin@example.com", [PNG, PNG, PNG, PNG])).toThrow("at most three");
+    await expect(combineEmailScreenshots([PNG, PNG])).rejects.toThrow("exactly three");
   });
 
   it("refuses unverified, incomplete or header-injected messages", () => {
     expect(() => buildGmailDraftRaw(prospect({ email_verified: false }), "justin@example.com")).toThrow();
     expect(() => buildGmailDraftRaw(prospect({ contact_email: null }), "justin@example.com")).toThrow();
+    expect(() => buildGmailDraftRaw(prospect({ contact_email: "elitemedspa3319@gmail.com214.241.4475" }), "justin@example.com")).toThrow("valid sender and verified recipient");
     expect(() => buildGmailDraftRaw(prospect({ email_subject: null }), "justin@example.com")).toThrow();
     expect(() => buildGmailDraftRaw(prospect({ email_body: null }), "justin@example.com")).toThrow();
     expect(() => buildGmailDraftRaw(prospect({ email_subject: "Hello\r\nBcc: x@y.com" }), "justin@example.com")).toThrow();
@@ -329,13 +351,14 @@ describe("Gmail draft creation and recovery", () => {
       screen_id: String(index), screen_name: ["Home", "Booking", "Community"][index], storage_path: path,
     })) }));
     const gmail = gateway();
-    const downloadPng = vi.fn(async (_path: string) => PNG);
+    const validPng = await sharp({ create: { width: 600, height: 1100, channels: 3, background: "#f2e9de" } }).png().toBuffer();
+    const downloadPng = vi.fn(async (_path: string) => validPng);
     const result = await createGmailDrafts({ ...options, store: memory.store, gateway: gmail.gateway, imageStore: { downloadEmailImage: downloadPng } });
     expect(result.created).toBe(1);
     expect(downloadPng.mock.calls.map((call) => call[0])).toEqual(paths);
     expect(gmail.createDraft).toHaveBeenCalledTimes(1);
     const mime = Buffer.from(gmail.createDraft.mock.calls[0]?.[0] ?? "", "base64url").toString("utf8");
-    expect((mime.match(/Content-ID: </g) ?? [])).toHaveLength(3);
+    expect((mime.match(/Content-ID: </g) ?? [])).toHaveLength(1);
   });
 
   it("creates a text and HTML draft without an image when app_image_urls is missing", async () => {

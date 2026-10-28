@@ -34,6 +34,7 @@ function prospect(overrides: Partial<Prospect> = {}): Prospect {
     retry_count: 2,
     sent_at: null,
     stitch_project_id: null,
+    stitch_attempt: null,
     stitch_prompt: "EXACT STORED STEP 6 PROMPT",
     stitch_status: "PENDING",
     transparent_logo_url: "prospects/prospect-1/logo/transparent.png",

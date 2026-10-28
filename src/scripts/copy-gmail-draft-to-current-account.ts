@@ -7,10 +7,9 @@ import {
 import { getServerSupabaseClient } from "../lib/supabase/server.js";
 import {
   buildGmailDraftRaw,
+  combineEmailScreenshots,
   createSupabaseGmailConceptImageStore,
   findConceptImagePaths,
-  hasMonarchSignatureLine,
-  loadMonarchSignatureLogo,
 } from "../modules/emails/gmail-draft-creator.js";
 
 function header(message: gmail_v1.Schema$MessagePart, name: string): string | null {
@@ -47,16 +46,13 @@ async function verifyDraft(
   const leaves = parts(root);
   const plain = leaves.find((item) => item.mimeType === "text/plain");
   const html = leaves.find((item) => item.mimeType === "text/html");
-  const images = leaves.filter((item) => item.mimeType === "image/png");
-  if (!plain?.body?.data || !html?.body?.data || images.length !== 4) {
-    throw new Error("Copied draft is missing text alternatives or one of its four inline PNGs");
+  const images = leaves.filter((item) => item.mimeType === "image/png" || item.mimeType === "image/jpeg");
+  if (!plain?.body?.data || !html?.body?.data || images.length !== 1) {
+    throw new Error("Copied draft must contain text alternatives and exactly one inline showcase image");
   }
   const htmlText = Buffer.from(html.body.data, "base64url").toString("utf8");
-  const filenames = new Set(images.map((item) => item.filename));
-  for (const filename of [
-    "app-screen-1.png", "app-screen-2.png", "app-screen-3.png", "monarch-systems-logo.png",
-  ]) {
-    if (!filenames.has(filename)) throw new Error(`Copied draft is missing ${filename}`);
+  if (!/^app-screen-1\.(?:png|jpg)$/.test(images[0]?.filename ?? "")) {
+    throw new Error("Copied draft is missing its combined showcase image");
   }
   for (const image of images) {
     const contentId = header(image, "Content-ID")?.replace(/^<|>$/g, "");
@@ -110,15 +106,11 @@ async function main(): Promise<void> {
       if (paths.length !== 3) throw new Error("Expected exactly three saved app concept images");
       const imageStore = createSupabaseGmailConceptImageStore(client);
       const images = await Promise.all(paths.map((path) => imageStore.downloadEmailImage(path)));
-      const signature = hasMonarchSignatureLine(prospect.email_body)
-        ? await loadMonarchSignatureLogo()
-        : undefined;
-      if (!signature) throw new Error("Expected the approved Monarch signature logo");
+      const showcase = await combineEmailScreenshots(images);
       const raw = buildGmailDraftRaw(
         { ...prospect, workflow_status: "EMAIL_GENERATED" },
         senderEmail,
-        images,
-        signature,
+        showcase,
       );
       currentDraftId = await gateway.createDraft(raw);
     }
@@ -144,7 +136,7 @@ async function main(): Promise<void> {
       throw new Error(`New draft exists, but could not update the prospect: ${updateError?.message ?? "record changed"}`);
     }
   }
-  console.log(`GMAIL DRAFT COPIED\nBusiness: ${businessName}\nFrom: ${senderEmail}\nTo: ${prospect.contact_email}\nSubject: ${prospect.email_subject}\nPrevious draft ID: ${oldDraftId}\nCurrent draft ID: ${currentDraftId}\nThree app images and signature logo verified inline. No email was sent.`);
+  console.log(`GMAIL DRAFT COPIED\nBusiness: ${businessName}\nFrom: ${senderEmail}\nTo: ${prospect.contact_email}\nSubject: ${prospect.email_subject}\nPrevious draft ID: ${oldDraftId}\nCurrent draft ID: ${currentDraftId}\nOne combined showcase image verified inline. No email was sent.`);
 }
 
 try {

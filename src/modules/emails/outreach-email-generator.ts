@@ -1,6 +1,7 @@
 import {
   MONARCH_OUTREACH_BODY_TEMPLATE,
   MONARCH_OUTREACH_NO_VISUAL_BODY_TEMPLATE,
+  MONARCH_OUTREACH_POSTAL_ADDRESS,
   MONARCH_OUTREACH_SENDER_NAME,
   MONARCH_OUTREACH_SIGNATURE_LABEL,
   MONARCH_OUTREACH_SUBJECT_TEMPLATE,
@@ -116,6 +117,7 @@ export function renderOutreachEmail(prospect: Prospect): GeneratedOutreachEmail 
     business_name: businessName,
     sender_name: senderName,
     signature_company: MONARCH_OUTREACH_SIGNATURE_LABEL,
+    postal_address: MONARCH_OUTREACH_POSTAL_ADDRESS,
     visual_sentence: hasVisual
       ? substitute(MONARCH_OUTREACH_VISUAL_SENTENCE, {
           business_name: businessName,

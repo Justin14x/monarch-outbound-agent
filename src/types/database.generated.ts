@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.17"
   }
   public: {
     Tables: {
@@ -35,6 +35,7 @@ export type Database = {
           original_logo_url: string | null
           retry_count: number
           sent_at: string | null
+          stitch_attempt: Json | null
           stitch_project_id: string | null
           stitch_prompt: string | null
           stitch_status: string | null
@@ -63,6 +64,7 @@ export type Database = {
           original_logo_url?: string | null
           retry_count?: number
           sent_at?: string | null
+          stitch_attempt?: Json | null
           stitch_project_id?: string | null
           stitch_prompt?: string | null
           stitch_status?: string | null
@@ -91,6 +93,7 @@ export type Database = {
           original_logo_url?: string | null
           retry_count?: number
           sent_at?: string | null
+          stitch_attempt?: Json | null
           stitch_project_id?: string | null
           stitch_prompt?: string | null
           stitch_status?: string | null

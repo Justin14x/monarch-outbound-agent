@@ -5,7 +5,9 @@ import type { Prospect } from "../src/modules/prospects/prospect.types.js";
 
 const ID = "b93a9f95-17cd-4d2f-a803-7b7c0635253f";
 const imagePath = `prospects/${ID}/stitch/home.png`;
-const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0]);
+import sharp from "sharp";
+
+const png = await sharp({ create: { width: 600, height: 1100, channels: 3, background: "#f2e9de" } }).png().toBuffer();
 
 function prospect(overrides: Partial<Prospect> = {}): Prospect {
   return {
@@ -18,6 +20,7 @@ function prospect(overrides: Partial<Prospect> = {}): Prospect {
     id: ID,
     logo_source_url: null, logo_status: "PENDING", normalized_domain: "skinhubmedspa.com",
     original_logo_url: null, retry_count: 0, sent_at: null, stitch_project_id: null,
+    stitch_attempt: null,
     stitch_prompt: null, stitch_status: null, transparent_logo_url: null,
     updated_at: "2026-09-21T00:00:00.000Z", website: "https://skinhubmedspa.com",
     workflow_status: "DRAFT_CREATED", ...overrides,
@@ -65,12 +68,12 @@ describe("explicit existing Gmail draft enhancement", () => {
     expect(result.imagePaths).toEqual(paths);
     expect(task.downloadPng.mock.calls.map((call) => call[0])).toEqual(paths);
     const mime = Buffer.from(task.updateDraft.mock.calls[0]?.[1] ?? "", "base64url").toString("utf8");
-    expect((mime.match(/Content-ID: </g) ?? [])).toHaveLength(3);
+    expect((mime.match(/Content-ID: </g) ?? [])).toHaveLength(1);
     expect(task.updateDraft).toHaveBeenCalledTimes(1);
     expect(task.createDraft).not.toHaveBeenCalled();
   });
 
-  it("adds the Monarch logo beside the linked signature while updating the same draft", async () => {
+  it("keeps a single CID image when the linked signature is present", async () => {
     const paths = ["home", "booking", "community"].map((name) =>
       `prospects/${ID}/stitch/${name}.png`,
     );
@@ -83,8 +86,8 @@ describe("explicit existing Gmail draft enhancement", () => {
     const result = await enhanceGmailDraft(task.options);
     const mime = Buffer.from(task.updateDraft.mock.calls[0]?.[1] ?? "", "base64url").toString("utf8");
     expect(result.draftId).toBe("draft-existing");
-    expect((mime.match(/Content-ID: </g) ?? [])).toHaveLength(4);
-    expect(mime).toMatch(new RegExp(`Content-ID: <monarch-signature-${ID}-[a-f0-9]{32}@monarch\\.local>`));
+    expect((mime.match(/Content-ID: </g) ?? [])).toHaveLength(1);
+    expect(mime).not.toContain("monarch-signature-");
     expect(task.updateDraft).toHaveBeenCalledTimes(1);
     expect(task.createDraft).not.toHaveBeenCalled();
   });

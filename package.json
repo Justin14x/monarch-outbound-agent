@@ -15,6 +15,7 @@
     "gmail:copy-draft": "npm run build && node --env-file=.env.local dist/scripts/copy-gmail-draft-to-current-account.js",
     "leads:sync": "npm run build && node --env-file=.env.local dist/scripts/sync-lead-sheet.js",
     "leads:import": "npm run build && node --env-file=.env.local dist/scripts/import-lead-sheet.js",
+    "outreach:run": "npm run build && node --env-file=.env.local dist/scripts/run-daily-outreach.js",
     "logos:find": "npm run build && node --env-file=.env.local dist/scripts/find-logos.js",
     "logos:inspect": "npm run build && node --env-file=.env.local dist/scripts/inspect-logos.js",
     "logos:make-transparent": "npm run build && node --env-file=.env.local dist/scripts/process-transparent-logos.js",

@@ -32,6 +32,7 @@ function prospect(id: string, overrides: Partial<Prospect> = {}): Prospect {
     retry_count: 1,
     sent_at: null,
     stitch_project_id: "stitch-1",
+    stitch_attempt: null,
     stitch_prompt: "prompt",
     stitch_status: "COMPLETE",
     transparent_logo_url: null,

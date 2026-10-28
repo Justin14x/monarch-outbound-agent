@@ -57,6 +57,7 @@ function prospect(): Prospect {
     retry_count: 0,
     sent_at: null,
     stitch_project_id: PROJECT,
+    stitch_attempt: null,
     stitch_prompt: "old prompt",
     stitch_status: "COMPLETE",
     transparent_logo_url: null,
@@ -438,7 +439,7 @@ describe("controlled three-screen Stitch generation", () => {
     const thick = await addSideCanvas(await thickPhonePng());
     h.assets.set(manifest.screens[1]!.storage_path, thick.body);
     await expect(commitThreeScreens(manifest, h.store))
-      .rejects.toThrow(/Services \/ Booking: phone outline differs from Home \/ Discovery/);
+      .rejects.toThrow(/Services \/ Booking: fixed phone shell differs from Home \/ Discovery/);
     expect(h.store.commit).not.toHaveBeenCalled();
   });
 
@@ -453,7 +454,7 @@ describe("controlled three-screen Stitch generation", () => {
     }).png().toBuffer());
     h.assets.set(manifest.screens[0]!.storage_path, unframed);
     await expect(commitThreeScreens(manifest, h.store))
-      .rejects.toThrow("stored PNG has no usable black phone outline");
+      .rejects.toThrow("Stored PNG is missing the canonical black phone shell or Dynamic Island");
     expect(h.store.commit).not.toHaveBeenCalled();
   });
 
@@ -474,6 +475,37 @@ describe("controlled three-screen Stitch generation", () => {
     expect(h.store.commit).not.toHaveBeenCalled();
   });
 
+  it("recovers a recorded attempt from its new project and preserves the fixed presentation", async () => {
+    const h = harness();
+    h.gateway.getScreen = vi.fn(async (_projectId, screenId) =>
+      screen(Number(screenId.replace("screen-", ""))));
+    const candidate = prospect();
+    candidate.stitch_project_id = "previous-approved-project";
+    candidate.stitch_attempt = {
+      project_id: PROJECT,
+      prompt: "approved unified prompt",
+      started_at: "2026-10-20T00:00:00Z",
+      validated: true,
+      screens: [1, 2, 3].map((index) => ({ screen_id: `screen-${index}` })),
+    };
+    const manifest = await stageExistingThreeScreens({
+      prospect: candidate,
+      screenIds: ["screen-1", "screen-2", "screen-3"],
+      gateway: h.gateway,
+      fetcher: h.fetcher,
+      store: h.store,
+    });
+    expect(h.gateway.getScreen).toHaveBeenCalledWith(PROJECT, "screen-1");
+    expect(h.gateway.generate).not.toHaveBeenCalled();
+    expect(manifest.version).toBe(3);
+    expect(manifest.originalProjectId).toBe("previous-approved-project");
+    expect(manifest.prompts).toEqual(["approved unified prompt"]);
+    expect(manifest.screens.map((item) => [item.width, item.height]))
+      .toEqual([[936, 1804], [936, 1804], [936, 1804]]);
+    await commitThreeScreens(manifest, h.store);
+    expect(h.store.commit).toHaveBeenCalledOnce();
+  });
+
   it("saves generation metadata before a Storage failure so no retry is needed", async () => {
     const h = harness();
     const onPrepared = vi.fn(async (_manifest: ThreeScreenManifest) => {});
@@ -483,10 +515,75 @@ describe("controlled three-screen Stitch generation", () => {
       store: h.store, onPrepared,
     })).rejects.toThrow("Storage unavailable");
     expect(h.gateway.generate).toHaveBeenCalledOnce();
+    expect(h.store.uploadNew).toHaveBeenCalledOnce();
     expect(onPrepared).toHaveBeenCalledOnce();
     expect(onPrepared.mock.calls[0]?.[0].screens.map((item) => item.screen_id)).toEqual([
       "screen-1", "screen-2", "screen-3",
     ]);
     expect(h.store.commit).not.toHaveBeenCalled();
+  });
+
+  it("durably records the project and screen IDs before downloading and preserves commit CAS", async () => {
+    const h = harness();
+    const attempts: Array<{ phase: string; screens: Array<{ screen_id: string }> }> = [];
+    h.store.recordAttempt = vi.fn(async (_prospect, attempt) => {
+      attempts.push({ phase: attempt.phase, screens: attempt.screens });
+      return `2026-10-20T00:00:0${attempts.length}Z`;
+    });
+    const manifest = await stageThreeScreens({
+      prospect: prospect(), brandResolver: h.brandResolver, gateway: h.gateway,
+      fetcher: h.fetcher, store: h.store,
+    });
+    expect(attempts.map((item) => item.phase)).toEqual([
+      "PROJECT_CREATED", "SCREENS_RETURNED", "SCREENS_VALIDATED", "ASSETS_STORED",
+    ]);
+    expect(attempts[1]!.screens.map((item) => item.screen_id))
+      .toEqual(["screen-1", "screen-2", "screen-3"]);
+    expect(manifest.originalUpdatedAt).toBe("2026-10-20T00:00:04Z");
+    expect(h.store.commit).not.toHaveBeenCalled();
+  });
+
+  it("retries a transient Storage failure with the exact same bytes and no Stitch regeneration", async () => {
+    const h = harness();
+    const originalUpload = h.store.uploadNew;
+    let failedOnce = false;
+    h.store.uploadNew = vi.fn(async (path, body) => {
+      if (!failedOnce) {
+        failedOnce = true;
+        throw new Error("fetch failed");
+      }
+      await originalUpload(path, body);
+    });
+    await stageThreeScreens({
+      prospect: prospect(), brandResolver: h.brandResolver, gateway: h.gateway,
+      fetcher: h.fetcher, store: h.store,
+    });
+    const calls = vi.mocked(h.store.uploadNew).mock.calls;
+    expect(calls).toHaveLength(4);
+    expect(calls[0]![0]).toBe(calls[1]![0]);
+    expect(Buffer.from(calls[0]![1])).toEqual(Buffer.from(calls[1]![1]));
+    expect(h.gateway.generate).toHaveBeenCalledOnce();
+  });
+
+  it("reconciles a generation timeout read-only and records its phase without retrying generation", async () => {
+    const h = harness();
+    const attempts: Array<{ phase: string; screens: Array<{ screen_id: string }>; error?: string }> = [];
+    h.store.recordAttempt = vi.fn(async (_prospect, attempt) => {
+      attempts.push(attempt);
+      return `2026-10-20T00:00:0${attempts.length}Z`;
+    });
+    vi.mocked(h.gateway.generate).mockRejectedValueOnce(new Error("The operation was aborted due to timeout"));
+    vi.mocked(h.gateway.listScreens).mockResolvedValueOnce([screen(1), screen(2), screen(3)]);
+    await expect(stageThreeScreens({
+      prospect: prospect(), brandResolver: h.brandResolver, gateway: h.gateway,
+      fetcher: h.fetcher, store: h.store,
+    })).rejects.toThrow(/Stitch GENERATE failed after \d+ms/);
+    expect(h.gateway.generate).toHaveBeenCalledOnce();
+    expect(h.gateway.listScreens).toHaveBeenCalledWith(PROJECT);
+    expect(attempts.at(-1)?.phase).toBe("FAILED");
+    expect(attempts.at(-1)?.screens.map((item) => item.screen_id))
+      .toEqual(["screen-1", "screen-2", "screen-3"]);
+    expect(attempts.at(-1)?.error).toContain("GENERATE:");
+    expect(h.store.uploadNew).not.toHaveBeenCalled();
   });
 });

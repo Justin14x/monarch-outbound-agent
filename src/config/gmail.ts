@@ -5,6 +5,7 @@ export const GMAIL_METADATA_SCOPE = "https://www.googleapis.com/auth/gmail.metad
 export const GOOGLE_SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 export const GMAIL_OAUTH_REDIRECT_URI = "http://127.0.0.1:8765/oauth2callback";
 export const GMAIL_TOKEN_FILENAME = ".gmail-oauth-token.json";
+export const GMAIL_SENDER_DISPLAY_NAME = "Justin Olaleye";
 
 export interface GmailOAuthConfig {
   clientId: string;
